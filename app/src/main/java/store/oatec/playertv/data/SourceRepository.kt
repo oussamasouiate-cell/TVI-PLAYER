@@ -303,11 +303,11 @@ class SourceRepository {
 
     private companion object {
         const val MAX_SOURCE_BYTES = 40 * 1024 * 1024
-        const val MAX_STREAM_RESPONSE_BYTES = 128 * 1024 * 1024
+        const val MAX_STREAM_RESPONSE_BYTES = 256 * 1024 * 1024
         const val MAX_CATEGORY_RESPONSE_BYTES = 8 * 1024 * 1024
         const val MAX_SERIES_RESPONSE_BYTES = 4 * 1024 * 1024
         const val MAX_CHANNELS = 20_000
-        const val MAX_VOD_ITEMS = 2_000
+        const val MAX_VOD_ITEMS = 20_000
         const val MAX_REDIRECTS = 5
         const val INITIAL_STREAM_CAPACITY = 128
         const val MAX_FIELD_LENGTH = 512
