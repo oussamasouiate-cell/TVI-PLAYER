@@ -141,10 +141,12 @@ class SourceRepository {
             reader.beginArray()
             val results = ArrayList<MediaEntry>(minOf(maxItems, INITIAL_STREAM_CAPACITY))
             while (reader.hasNext()) {
-                // Keep the UI responsive on providers with enormous live lists.
-                // Return the first MAX_CHANNELS entries instead of discarding the
-                // entire catalogue when the provider has more entries than the cap.
-                if (results.size >= maxItems) return@use results
+                // Never silently return a partial catalogue. If a provider exceeds
+                // the configured safety limit, fail explicitly rather than making
+                // the user believe the list is complete.
+                if (results.size >= maxItems) {
+                    throw IOException("The provider returned more than $maxItems items. The catalogue safety limit was reached.")
+                }
                 if (reader.peek() != JsonToken.BEGIN_OBJECT) {
                     reader.skipValue()
                     continue
