@@ -141,6 +141,10 @@ class SourceRepository {
             reader.beginArray()
             val results = ArrayList<MediaEntry>(minOf(maxItems, INITIAL_STREAM_CAPACITY))
             while (reader.hasNext()) {
+                // Keep the UI responsive on providers with enormous live lists.
+                // Return the first MAX_CHANNELS entries instead of discarding the
+                // entire catalogue when the provider has more entries than the cap.
+                if (results.size >= maxItems) return@use results
                 if (reader.peek() != JsonToken.BEGIN_OBJECT) {
                     reader.skipValue()
                     continue
@@ -184,9 +188,6 @@ class SourceRepository {
                 }
                 reader.endObject()
                 if (id.isBlank()) continue
-                if (results.size >= maxItems) {
-                    throw IOException("The provider returned more than $maxItems $type entries. Narrow the list at the provider or use a smaller playlist.")
-                }
                 val safeExtension = safeExtension(extension, if (type == "live") "ts" else "mp4")
                 results += MediaEntry(
                     id = "${source.id}:$type:$id",
