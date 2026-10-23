@@ -219,20 +219,15 @@ fun PlayerTvApp() {
                 catalogLoadMutex.withLock {
                     runCatching {
                         withContext(Dispatchers.IO) {
-                            val result = repository.loadCatalog(source, catalogSection)
-                            // Persist the successfully fetched section atomically. If parsing or
-                            // the database write fails, the previous stored section remains intact.
-                            val entries = when (catalogSection) {
-                                CatalogSection.LIVE -> result.liveChannels
-                                CatalogSection.MOVIES -> result.movies
-                                CatalogSection.SERIES -> result.series
+                            // Stream bounded batches directly into one SQLite transaction.
+                            // A failed response rolls back, preserving the last good catalogue.
+                            mediaCatalogStore.beginImport(source.id, catalogSection.name).use { session ->
+                                val result = repository.loadCatalogBatched(source, catalogSection) { batch ->
+                                    session.insertBatch(batch)
+                                }
+                                session.commit()
+                                result
                             }
-                            mediaCatalogStore.replaceSection(
-                                source.id,
-                                catalogSection.name,
-                                sequenceOf(entries),
-                            )
-                            result
                         }
                     }
                         .onSuccess { result ->
