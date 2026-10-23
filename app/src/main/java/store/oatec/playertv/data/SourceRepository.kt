@@ -279,8 +279,8 @@ class SourceRepository {
             require(uri.scheme == "http" || uri.scheme == "https") { "Only HTTP and HTTPS sources are supported." }
             require(uri.host != null) { "Enter a valid source URL." }
             val connection = current.openConnection() as HttpURLConnection
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 30_000
+            connection.connectTimeout = CONNECT_TIMEOUT_MS
+            connection.readTimeout = READ_TIMEOUT_MS
             connection.instanceFollowRedirects = false
             connection.setRequestProperty("User-Agent", "OATEC-PlayerTv/1.0 Android")
             try {
@@ -305,6 +305,9 @@ class SourceRepository {
         value.takeIf { it.matches(Regex("[A-Za-z0-9]{1,8}")) } ?: fallback
 
     private companion object {
+        const val CONNECT_TIMEOUT_MS = 20_000
+        // Large IPTV catalogues can take considerably longer than ordinary API calls.
+        const val READ_TIMEOUT_MS = 120_000
         const val MAX_SOURCE_BYTES = 40 * 1024 * 1024
         const val MAX_STREAM_RESPONSE_BYTES = 256 * 1024 * 1024
         const val MAX_CATEGORY_RESPONSE_BYTES = 8 * 1024 * 1024
