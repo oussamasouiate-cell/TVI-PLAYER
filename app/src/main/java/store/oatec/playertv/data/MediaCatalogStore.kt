@@ -47,48 +47,105 @@ class MediaCatalogStore(context: Context) : SQLiteOpenHelper(
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        // Keep existing catalogues when upgrading. Version 2 introduced this
+        // table; older installations simply create it if it is absent.
         if (oldVersion < 2) {
-            db.execSQL("DROP TABLE IF EXISTS media_catalog")
-            onCreate(db)
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS media_catalog (
+                    source_id TEXT NOT NULL, section TEXT NOT NULL, item_id TEXT NOT NULL,
+                    title TEXT NOT NULL, category TEXT NOT NULL, stream_url TEXT NOT NULL,
+                    logo_url TEXT NOT NULL, kind TEXT NOT NULL, description TEXT NOT NULL,
+                    season TEXT NOT NULL, episode_number TEXT NOT NULL, genre TEXT NOT NULL,
+                    rating TEXT NOT NULL, year TEXT NOT NULL, release_date TEXT NOT NULL,
+                    director TEXT NOT NULL, cast TEXT NOT NULL,
+                    PRIMARY KEY(source_id, section, item_id)
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS media_catalog_source_section_title ON media_catalog(source_id, section, title COLLATE NOCASE)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS media_catalog_source_section_category ON media_catalog(source_id, section, category COLLATE NOCASE)")
+        }
+    }
+
+    /**
+     * Starts an atomic catalogue replacement. Feed bounded batches while parsing
+     * the provider response, then call commit; closing without commit rolls back.
+     */
+    fun beginImport(sourceId: String, section: String): ImportSession {
+        val db = writableDatabase
+        db.beginTransaction()
+        return try {
+            db.delete(TABLE, "source_id=? AND section=?", arrayOf(sourceId, section))
+            ImportSession(db, sourceId, section)
+        } catch (error: Throwable) {
+            db.endTransaction()
+            throw error
+        }
+    }
+
+    inner class ImportSession internal constructor(
+        private val db: SQLiteDatabase,
+        private val sourceId: String,
+        private val section: String,
+    ) : AutoCloseable {
+        private var finished = false
+
+        fun insertBatch(entries: List<MediaEntry>) {
+            check(!finished) { "Catalogue import is already closed." }
+            if (entries.isEmpty()) return
+            entries.forEach { entry ->
+                val values = ContentValues().apply {
+                    put("source_id", sourceId)
+                    put("section", section)
+                    put("item_id", entry.id)
+                    put("title", entry.title)
+                    put("category", entry.category)
+                    put("stream_url", entry.streamUrl)
+                    put("logo_url", entry.logoUrl)
+                    put("kind", entry.kind.name)
+                    put("description", entry.description)
+                    put("season", entry.season)
+                    put("episode_number", entry.episodeNumber)
+                    put("genre", entry.genre)
+                    put("rating", entry.rating)
+                    put("year", entry.year)
+                    put("release_date", entry.releaseDate)
+                    put("director", entry.director)
+                    put("cast", entry.cast)
+                }
+                db.insertWithOnConflict(TABLE, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+        }
+
+        fun commit() {
+            check(!finished) { "Catalogue import is already closed." }
+            db.setTransactionSuccessful()
+            finished = true
+            db.endTransaction()
+        }
+
+        override fun close() {
+            if (!finished) {
+                finished = true
+                db.endTransaction()
+            }
         }
     }
 
     /** Replace a section atomically; call appendBatch repeatedly inside this transaction. */
     fun replaceSection(sourceId: String, section: String, batches: Sequence<List<MediaEntry>>) {
-        writableDatabase.beginTransaction()
-        try {
-            writableDatabase.delete(TABLE, "source_id=? AND section=?", arrayOf(sourceId, section))
-            batches.forEach { batch -> insertBatch(sourceId, section, batch) }
-            writableDatabase.setTransactionSuccessful()
-        } finally {
-            writableDatabase.endTransaction()
+        beginImport(sourceId, section).use { session ->
+            batches.forEach(session::insertBatch)
+            session.commit()
         }
     }
 
     fun insertBatch(sourceId: String, section: String, entries: List<MediaEntry>) {
         if (entries.isEmpty()) return
-        val db = writableDatabase
-        entries.forEach { entry ->
-            val values = ContentValues().apply {
-                put("source_id", sourceId)
-                put("section", section)
-                put("item_id", entry.id)
-                put("title", entry.title)
-                put("category", entry.category)
-                put("stream_url", entry.streamUrl)
-                put("logo_url", entry.logoUrl)
-                put("kind", entry.kind.name)
-                put("description", entry.description)
-                put("season", entry.season)
-                put("episode_number", entry.episodeNumber)
-                put("genre", entry.genre)
-                put("rating", entry.rating)
-                put("year", entry.year)
-                put("release_date", entry.releaseDate)
-                put("director", entry.director)
-                put("cast", entry.cast)
-            }
-            db.insertWithOnConflict(TABLE, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        beginImport(sourceId, section).use { session ->
+            session.insertBatch(entries)
+            session.commit()
         }
     }
 
