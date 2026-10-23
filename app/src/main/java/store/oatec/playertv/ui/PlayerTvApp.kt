@@ -1503,24 +1503,34 @@ private fun PlaybackDialog(
     val latestUseVlc by rememberUpdatedState(useVlc)
     val latestEntry by rememberUpdatedState(entry)
     val latestPreferences by rememberUpdatedState(preferences)
+    val latestVlcSession by rememberUpdatedState(vlcSession)
+    val latestLoadedEntry by rememberUpdatedState(loadedEntry)
     val channelIndex = channels.indexOfFirst { it.id == entry.id }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
-                loading = playbackState == Player.STATE_BUFFERING || playbackState == Player.STATE_IDLE
+                if (!latestUseVlc) {
+                    loading = playbackState == Player.STATE_BUFFERING || playbackState == Player.STATE_IDLE
+                }
             }
 
             override fun onPlayerError(playbackException: PlaybackException) {
-                // Media3 can fail on codecs/containers that VLC can decode (for example AC3/E-AC3).
-                // Try VLC once by switching the existing playback state; the media effect below
-                // will stop Media3 and start the same stream in VLC without creating a retry loop.
-                if (!useVlc) {
+                // Use current Compose state: this listener is installed once and otherwise
+                // retains the values captured during its first composition.
+                if (!latestUseVlc) {
                     try {
-                        if (entry.kind != MediaKind.LIVE && preferences.resumePlayback()) {
-                            preferences.saveProgress(entry.id, player.currentPosition.coerceAtLeast(0L))
+                        val currentEntry = latestEntry
+                        val currentPreferences = latestPreferences
+                        if (currentEntry.kind != MediaKind.LIVE && currentPreferences.resumePlayback()) {
+                            currentPreferences.saveProgress(
+                                currentEntry.id,
+                                player.currentPosition.coerceAtLeast(0L),
+                            )
                         }
-                        if (vlcSession == null) vlcSession = createVlcPlaybackSession(context)
+                        if (latestVlcSession == null) {
+                            vlcSession = createVlcPlaybackSession(context)
+                        }
                         error = ""
                         loading = true
                         useVlc = true
@@ -1538,9 +1548,9 @@ private fun PlaybackDialog(
         }
         player.addListener(listener)
         onDispose {
-            loadedEntry?.let { lastEntry ->
-                if (!latestUseVlc && lastEntry.kind != MediaKind.LIVE && preferences.resumePlayback()) {
-                    preferences.saveProgress(lastEntry.id, player.currentPosition)
+            latestLoadedEntry?.let { lastEntry ->
+                if (!latestUseVlc && lastEntry.kind != MediaKind.LIVE && latestPreferences.resumePlayback()) {
+                    latestPreferences.saveProgress(lastEntry.id, player.currentPosition.coerceAtLeast(0L))
                 }
             }
             player.stop()
