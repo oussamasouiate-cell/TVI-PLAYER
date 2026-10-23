@@ -188,11 +188,13 @@ class SourceRepository {
             val batch = ArrayList<MediaEntry>(DISPLAY_PAGE_SIZE)
             var totalItems = 0
             while (reader.hasNext()) {
-                // Never silently return a partial catalogue. If a provider exceeds
-                // the configured safety limit, fail explicitly rather than making
-                // the user believe the list is complete.
+                // Keep the import usable for very large provider catalogues.
+                // Save up to maxItems in bounded batches, then skip remaining JSON
+                // objects instead of failing the whole import and rolling back all
+                // channels/movies/series already received.
                 if (totalItems >= maxItems) {
-                    throw IOException("The provider returned more than $maxItems items. The catalogue safety limit was reached.")
+                    reader.skipValue()
+                    continue
                 }
                 if (reader.peek() != JsonToken.BEGIN_OBJECT) {
                     reader.skipValue()
