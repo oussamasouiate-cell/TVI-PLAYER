@@ -808,15 +808,17 @@ private fun NavigationRail(
     onExit: () -> Unit,
 ) {
     Column(
-        Modifier.width(if (compact) 124.dp else 180.dp).fillMaxHeight().background(Panel).padding(if (compact) 8.dp else 16.dp),
-        verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 8.dp),
+        Modifier.width(if (compact) 124.dp else 196.dp).fillMaxHeight()
+            .background(Brush.verticalGradient(listOf(Color(0xFF171D28), Color(0xFF0B0E14))))
+            .padding(if (compact) 8.dp else 16.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 11.dp)) {
             Surface(
                 color = Color(0xFF0D1117),
                 shape = RoundedCornerShape(13.dp),
-                border = BorderStroke(2.dp, Lime),
-                modifier = Modifier.size(if (compact) 34.dp else 44.dp),
+                border = BorderStroke(2.dp, Brush.linearGradient(listOf(Lime, GoldLight))),
+                modifier = Modifier.size(if (compact) 34.dp else 48.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text("IPTV", color = Lime, fontSize = if (compact) 8.sp else 10.sp, fontWeight = FontWeight.Black)
@@ -834,9 +836,9 @@ private fun NavigationRail(
             items(Section.entries, key = { it.name }) { item ->
                 val active = selected == item
                 Surface(
-                    color = if (active) Raised else Color.Transparent,
+                    color = if (active) Color(0xFF242D38) else Color.Transparent,
                     shape = RoundedCornerShape(12.dp),
-                    border = if (active) BorderStroke(1.dp, Lime.copy(alpha = 0.42f)) else null,
+                    border = if (active) BorderStroke(1.dp, Brush.horizontalGradient(listOf(Lime.copy(alpha = 0.9f), GoldLight.copy(alpha = 0.35f)))) else null,
                     modifier = Modifier.fillMaxWidth().focusable().clickable { onSelect(item) },
                 ) {
                     Text(
@@ -875,13 +877,13 @@ private fun TopBar(
     numberInput: String,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = if (compact) 10.dp else 28.dp, vertical = if (compact) 6.dp else 17.dp),
+        Modifier.fillMaxWidth().padding(horizontal = if (compact) 10.dp else 28.dp, vertical = if (compact) 8.dp else 20.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, color = TextMain, fontSize = if (compact) 17.sp else 24.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text(sourceName ?: "Add an IPTV source to begin", color = TextMuted, fontSize = if (compact) 9.sp else 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, color = TextMain, fontSize = if (compact) 17.sp else 27.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+            Text(sourceName ?: "Add an IPTV source to begin", color = GoldLight.copy(alpha = 0.88f), fontSize = if (compact) 9.sp else 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (numberInput.isNotEmpty()) {
             Text("CH $numberInput", color = Lime, fontSize = 15.sp, fontWeight = FontWeight.Bold)
@@ -941,6 +943,30 @@ private fun LiveScreen(
         preferences.customCategories()
     val distinctCategories = categories.distinct()
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp)) {
+        Row(
+            Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("YOUR ENTERTAINMENT", color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+                Text("Live channels, ready when you are", color = TextMuted, fontSize = 11.sp)
+            }
+            Surface(
+                color = Color(0x1F43D19E),
+                shape = RoundedCornerShape(50),
+                border = BorderStroke(1.dp, Color(0x6643D19E)),
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Box(Modifier.size(6.dp).background(Color(0xFF43D19E), CircleShape))
+                    Text("LIVE TV", color = Color(0xFF7AE6B7), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                }
+            }
+        }
         LazyRow(
             Modifier.fillMaxWidth().padding(vertical = 15.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -977,16 +1003,35 @@ private fun LiveScreen(
                 Text("NOW PLAYING", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                 Spacer(Modifier.height(8.dp))
                 Surface(
-                    color = Panel,
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                    color = Color(0xFF141B25),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, Color(0x55C4F05A)),
                     modifier = Modifier.fillMaxWidth().aspectRatio(1.75f),
                 ) {
-                    Column(Modifier.fillMaxSize().padding(22.dp), verticalArrangement = Arrangement.SpaceBetween) {
-                        Text("LIVE", color = Lime, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                        Column {
-                            Text("Receiver-style TV", color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                            Text("Choose a channel to start playback", color = TextMuted, fontSize = 12.sp)
+                    Box(
+                        Modifier.fillMaxSize().background(
+                            Brush.linearGradient(listOf(Color(0xFF263342), Color(0xFF121720), Color(0xFF30251B))),
+                        ),
+                    ) {
+                        Box(
+                            Modifier.fillMaxWidth().height(4.dp).align(Alignment.TopStart)
+                                .background(Brush.horizontalGradient(listOf(Lime, GoldLight, Color.Transparent))),
+                        )
+                        Column(
+                            Modifier.fillMaxSize().padding(22.dp),
+                            verticalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(color = Color(0x3324D18A), shape = RoundedCornerShape(6.dp)) {
+                                    Text("● LIVE", color = Color(0xFF7AE6B7), fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp))
+                                }
+                                Spacer(Modifier.weight(1f))
+                                Text("OATEC", color = TextMain.copy(alpha = 0.65f), fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Text("Your screen. Your world.", color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                                Text("Choose a channel to start watching", color = TextMuted, fontSize = 12.sp)
+                            }
                         }
                     }
                 }
