@@ -1512,7 +1512,27 @@ private fun PlaybackDialog(
             }
 
             override fun onPlayerError(playbackException: PlaybackException) {
-                error = playbackException.localizedMessage ?: "Playback failed. Check the stream or try again."
+                // Media3 can fail on codecs/containers that VLC can decode (for example AC3/E-AC3).
+                // Try VLC once by switching the existing playback state; the media effect below
+                // will stop Media3 and start the same stream in VLC without creating a retry loop.
+                if (!useVlc) {
+                    try {
+                        if (entry.kind != MediaKind.LIVE && preferences.resumePlayback()) {
+                            preferences.saveProgress(entry.id, player.currentPosition.coerceAtLeast(0L))
+                        }
+                        if (vlcSession == null) vlcSession = createVlcPlaybackSession(context)
+                        error = ""
+                        loading = true
+                        useVlc = true
+                        return
+                    } catch (failure: RuntimeException) {
+                        error = failure.localizedMessage
+                            ?: playbackException.localizedMessage
+                            ?: "Playback failed. Check the stream or try VLC manually."
+                    }
+                } else {
+                    error = playbackException.localizedMessage ?: "Playback failed. Check the stream or try again."
+                }
                 loading = false
             }
         }
