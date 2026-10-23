@@ -379,7 +379,7 @@ fun PlayerTvApp() {
                     }
                 },
         ) {
-            Row(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize()) {
                 NavigationRail(
                     selected = currentSection,
                     sourceName = activeSource?.name,
@@ -387,7 +387,7 @@ fun PlayerTvApp() {
                     onSelect = { section = it.name; selectedCategory = "All"; search = "" },
                     onExit = { (context as? Activity)?.finishAndRemoveTask() },
                 )
-                Column(Modifier.weight(1f).fillMaxHeight()) {
+                Column(Modifier.weight(1f).fillMaxWidth()) {
                     TopBar(
                         title = currentSection.label,
                         sourceName = activeSource?.name,
@@ -837,57 +837,67 @@ private fun NavigationRail(
     onSelect: (Section) -> Unit,
     onExit: () -> Unit,
 ) {
-    Column(
-        Modifier.width(if (compact) 124.dp else 196.dp).fillMaxHeight()
-            .background(Brush.verticalGradient(listOf(Color(0xFF171D28), Color(0xFF0B0E14))))
-            .padding(if (compact) 8.dp else 16.dp),
-        verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 10.dp),
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .background(Brush.horizontalGradient(listOf(Color(0xFF171D28), Color(0xFF0B0E14))))
+            .padding(horizontal = if (compact) 8.dp else 18.dp, vertical = if (compact) 6.dp else 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 12.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 11.dp)) {
-            Surface(
-                color = Color(0xFF0D1117),
-                shape = RoundedCornerShape(13.dp),
-                border = BorderStroke(2.dp, Brush.linearGradient(listOf(Lime, GoldLight))),
-                modifier = Modifier.size(if (compact) 34.dp else 48.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text("IPTV", color = Lime, fontSize = if (compact) 8.sp else 10.sp, fontWeight = FontWeight.Black)
-                }
-            }
-            Column {
-                Text("OATEC", color = TextMain, fontSize = if (compact) 12.sp else 17.sp, fontWeight = FontWeight.Black)
-                if (!compact) Text("PLAYER TV", color = TextMuted, fontSize = 9.sp, letterSpacing = 1.sp)
+        Surface(
+            color = Color(0xFF0D1117),
+            shape = RoundedCornerShape(10.dp),
+            border = BorderStroke(2.dp, Brush.linearGradient(listOf(Lime, GoldLight))),
+            modifier = Modifier.size(if (compact) 34.dp else 42.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text("IPTV", color = Lime, fontSize = if (compact) 8.sp else 10.sp, fontWeight = FontWeight.Black)
             }
         }
-        LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 8.dp),
+        Column(modifier = Modifier.widthIn(min = 58.dp, max = if (compact) 72.dp else 100.dp)) {
+            Text("OATEC", color = TextMain, fontSize = if (compact) 11.sp else 15.sp, fontWeight = FontWeight.Black, maxLines = 1)
+            if (!compact) Text("PLAYER TV", color = TextMuted, fontSize = 8.sp, letterSpacing = 1.sp, maxLines = 1)
+        }
+        Row(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            items(Section.entries, key = { it.name }) { item ->
+            itemsInNavigation@ for (item in Section.entries) {
                 val active = selected == item
                 Surface(
                     color = if (active) Color(0xFF242D38) else Color.Transparent,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(10.dp),
                     border = if (active) BorderStroke(1.dp, Brush.horizontalGradient(listOf(Lime.copy(alpha = 0.9f), GoldLight.copy(alpha = 0.35f)))) else null,
-                    modifier = Modifier.fillMaxWidth().focusable().clickable { onSelect(item) },
+                    modifier = Modifier.weight(1f).focusable().clickable { onSelect(item) },
                 ) {
-                    Text(
-                        item.label,
-                        color = if (active) Lime else TextMain,
-                        fontSize = if (compact) 11.sp else 14.sp,
-                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                        modifier = Modifier.padding(horizontal = if (compact) 8.dp else 13.dp, vertical = if (compact) 8.dp else 14.dp),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Box(
+                        modifier = Modifier.padding(horizontal = if (compact) 4.dp else 10.dp, vertical = if (compact) 9.dp else 12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            when (item) {
+                                Section.LIVE -> "TV LIVE"
+                                Section.MOVIES -> "FILM"
+                                Section.SERIES -> "SERIES"
+                                Section.SOURCES -> "SOURCES"
+                                Section.SETTINGS -> "SETTINGS"
+                            },
+                            color = if (active) Lime else TextMain,
+                            fontSize = if (compact) 10.sp else 13.sp,
+                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
-        if (!compact || sourceName != null) {
-            Text(sourceName ?: "No source selected", color = TextMuted, fontSize = if (compact) 9.sp else 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (!compact && sourceName != null) {
+            Text(sourceName, color = TextMuted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 110.dp))
         }
-        OutlinedButton(onClick = onExit, modifier = Modifier.fillMaxWidth().height(if (compact) 36.dp else 48.dp)) {
-            Text("Exit", fontSize = if (compact) 11.sp else 14.sp)
+        OutlinedButton(onClick = onExit, contentPadding = PaddingValues(horizontal = if (compact) 8.dp else 12.dp, vertical = 4.dp)) {
+            Text("Exit", fontSize = if (compact) 10.sp else 12.sp)
         }
     }
 }
