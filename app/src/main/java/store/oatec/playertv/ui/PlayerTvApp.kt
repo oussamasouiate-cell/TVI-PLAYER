@@ -197,15 +197,7 @@ fun PlayerTvApp() {
                 // Xtream response is being downloaded. Read it in bounded DB pages.
                 if (source.id == activeSourceId) {
                     val cached = withContext(Dispatchers.IO) {
-                        buildList {
-                            var offset = 0
-                            while (true) {
-                                val page = mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = offset)
-                                addAll(page)
-                                if (page.size < 500) break
-                                offset += page.size
-                            }
-                        }
+                        mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = 0)
                     }
                     if (cached.isNotEmpty() && source.id == activeSourceId) {
                         catalog = when (catalogSection) {
