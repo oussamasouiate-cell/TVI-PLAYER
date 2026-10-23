@@ -26,10 +26,23 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePath = System.getenv("RELEASE_KEYSTORE_PATH")
+                ?: throw GradleException("RELEASE_KEYSTORE_PATH is required for a release build")
+            storeFile = file(keystorePath)
+            storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+                ?: throw GradleException("RELEASE_KEYSTORE_PASSWORD is required for a release build")
+            keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+                ?: throw GradleException("RELEASE_KEY_ALIAS is required for a release build")
+            keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+                ?: throw GradleException("RELEASE_KEY_PASSWORD is required for a release build")
+        }
+    }
+
     buildTypes {
         getByName("release") {
-            // Test-installable release build. For public distribution, replace with a private release keystore.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
         }
     }
