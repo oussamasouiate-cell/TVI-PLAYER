@@ -15,6 +15,9 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+      RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+      RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -44,16 +47,30 @@ jobs:
       - name: Install Android SDK packages
         run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
+      - name: Configure private release signing key
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        shell: bash
+        run: |
+          test -n "$RELEASE_KEYSTORE_BASE64" || { echo "Missing GitHub secret RELEASE_KEYSTORE_BASE64"; exit 1; }
+          test -n "$RELEASE_KEYSTORE_PASSWORD" || { echo "Missing GitHub secret RELEASE_KEYSTORE_PASSWORD"; exit 1; }
+          test -n "$RELEASE_KEY_ALIAS" || { echo "Missing GitHub secret RELEASE_KEY_ALIAS"; exit 1; }
+          test -n "$RELEASE_KEY_PASSWORD" || { echo "Missing GitHub secret RELEASE_KEY_PASSWORD"; exit 1; }
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/tvi-player-release.jks"
+          chmod 600 "$RUNNER_TEMP/tvi-player-release.jks"
+          keytool -list -keystore "$RUNNER_TEMP/tvi-player-release.jks" -storepass "$RELEASE_KEYSTORE_PASSWORD" -alias "$RELEASE_KEY_ALIAS" >/dev/null
+          echo "RELEASE_KEYSTORE_PATH=$RUNNER_TEMP/tvi-player-release.jks" >> "$GITHUB_ENV"
+
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest --no-daemon
 
-      - name: Build release APKs
+      - name: Build signed release APKs
         run: gradle :app:assembleRelease --no-daemon
 
-      - name: Upload APKs
+      - name: Upload signed APKs
         uses: actions/upload-artifact@v4
         with:
-          name: tvi-player-release-apks
+          name: tvi-player-release-apks-signed
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
