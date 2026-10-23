@@ -176,13 +176,13 @@ class SourceRepository {
                             val value = readJsonValue(reader, MAX_LOGO_LENGTH)
                             if (logo.isBlank()) logo = value
                         }
-                        "plot" -> description = readJsonValue(reader, MAX_DESCRIPTION_LENGTH)
-                        "genre" -> genre = readJsonValue(reader, MAX_FIELD_LENGTH)
-                        "rating", "rating_5based" -> rating = readJsonValue(reader, 32)
-                        "year" -> year = readJsonValue(reader, 8)
-                        "release_date", "releaseDate" -> releaseDate = readJsonValue(reader, 32)
-                        "director" -> director = readJsonValue(reader, MAX_FIELD_LENGTH)
-                        "cast" -> cast = readJsonValue(reader, MAX_DESCRIPTION_LENGTH)
+                        "plot" -> if (type == "live") reader.skipValue() else description = readJsonValue(reader, MAX_DESCRIPTION_LENGTH)
+                        "genre" -> if (type == "live") reader.skipValue() else genre = readJsonValue(reader, MAX_FIELD_LENGTH)
+                        "rating", "rating_5based" -> if (type == "live") reader.skipValue() else rating = readJsonValue(reader, 32)
+                        "year" -> if (type == "live") reader.skipValue() else year = readJsonValue(reader, 8)
+                        "release_date", "releaseDate" -> if (type == "live") reader.skipValue() else releaseDate = readJsonValue(reader, 32)
+                        "director" -> if (type == "live") reader.skipValue() else director = readJsonValue(reader, MAX_FIELD_LENGTH)
+                        "cast" -> if (type == "live") reader.skipValue() else cast = readJsonValue(reader, MAX_DESCRIPTION_LENGTH)
                         else -> reader.skipValue()
                     }
                 }
