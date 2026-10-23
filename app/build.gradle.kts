@@ -26,6 +26,14 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    buildTypes {
+        getByName("release") {
+            // Test-installable release build. For public distribution, replace with a private release keystore.
+            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = false
+        }
+    }
+
     buildFeatures {
         compose = true
     }
