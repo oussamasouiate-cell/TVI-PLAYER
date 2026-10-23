@@ -193,6 +193,29 @@ fun PlayerTvApp() {
         busy = true
         scope.launch {
             try {
+                // Show the last successfully saved catalogue immediately while a large
+                // Xtream response is being downloaded. Read it in bounded DB pages.
+                if (source.id == activeSourceId) {
+                    val cached = withContext(Dispatchers.IO) {
+                        buildList {
+                            var offset = 0
+                            while (true) {
+                                val page = mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = offset)
+                                addAll(page)
+                                if (page.size < 500) break
+                                offset += page.size
+                            }
+                        }
+                    }
+                    if (cached.isNotEmpty() && source.id == activeSourceId) {
+                        catalog = when (catalogSection) {
+                            CatalogSection.LIVE -> catalog.copy(liveChannels = cached)
+                            CatalogSection.MOVIES -> catalog.copy(movies = cached)
+                            CatalogSection.SERIES -> catalog.copy(series = cached)
+                        }
+                        message = "Showing saved catalogue (" + cached.size + " items) while refreshing…"
+                    }
+                }
                 catalogLoadMutex.withLock {
                     runCatching {
                         withContext(Dispatchers.IO) {
