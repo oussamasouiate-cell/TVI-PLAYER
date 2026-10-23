@@ -47,13 +47,13 @@ jobs:
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest --no-daemon
 
-      - name: Build debug APKs
-        run: gradle :app:assembleDebug --no-daemon
+      - name: Build release APKs
+        run: gradle :app:assembleRelease --no-daemon
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: tvi-player-debug-apks
-          path: app/build/outputs/apk/debug/*.apk
+          name: tvi-player-release-apks
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
