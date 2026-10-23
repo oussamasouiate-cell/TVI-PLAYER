@@ -109,6 +109,7 @@ import store.oatec.playertv.data.PlayerPreferences
 import store.oatec.playertv.data.OatecAboutRepository
 import store.oatec.playertv.data.SecureSourceStore
 import store.oatec.playertv.data.SourceRepository
+import store.oatec.playertv.data.MediaCatalogStore
 import store.oatec.playertv.model.MediaEntry
 import store.oatec.playertv.model.MediaKind
 import store.oatec.playertv.model.CatalogSection
@@ -144,6 +145,7 @@ fun PlayerTvApp() {
     val configuration = LocalConfiguration.current
     val compactLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE && configuration.screenWidthDp < 900
     val repository = remember { SourceRepository() }
+    val mediaCatalogStore = remember { MediaCatalogStore(context) }
     val sourceStore = remember { SecureSourceStore(context) }
     val preferences = remember { PlayerPreferences(context) }
     val aboutRepository = remember { OatecAboutRepository() }
@@ -192,7 +194,24 @@ fun PlayerTvApp() {
         scope.launch {
             try {
                 catalogLoadMutex.withLock {
-                    runCatching { withContext(Dispatchers.IO) { repository.loadCatalog(source, catalogSection) } }
+                    runCatching {
+                        withContext(Dispatchers.IO) {
+                            val result = repository.loadCatalog(source, catalogSection)
+                            // Persist the successfully fetched section atomically. If parsing or
+                            // the database write fails, the previous stored section remains intact.
+                            val entries = when (catalogSection) {
+                                CatalogSection.LIVE -> result.liveChannels
+                                CatalogSection.MOVIES -> result.movies
+                                CatalogSection.SERIES -> result.series
+                            }
+                            mediaCatalogStore.replaceSection(
+                                source.id,
+                                catalogSection.name,
+                                sequenceOf(entries),
+                            )
+                            result
+                        }
+                    }
                         .onSuccess { result ->
                             if (source.id == activeSourceId) {
                                 catalog = when (catalogSection) {
