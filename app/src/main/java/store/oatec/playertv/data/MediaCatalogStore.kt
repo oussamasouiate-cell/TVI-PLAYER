@@ -141,11 +141,40 @@ class MediaCatalogStore(context: Context) : SQLiteOpenHelper(
         }
     }
 
+    /**
+     * Append entries without deleting previously stored rows. Use beginImport()
+     * when the caller intends to replace a whole section atomically.
+     */
     fun insertBatch(sourceId: String, section: String, entries: List<MediaEntry>) {
         if (entries.isEmpty()) return
-        beginImport(sourceId, section).use { session ->
-            session.insertBatch(entries)
-            session.commit()
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            entries.forEach { entry ->
+                val values = ContentValues().apply {
+                    put("source_id", sourceId)
+                    put("section", section)
+                    put("item_id", entry.id)
+                    put("title", entry.title)
+                    put("category", entry.category)
+                    put("stream_url", entry.streamUrl)
+                    put("logo_url", entry.logoUrl)
+                    put("kind", entry.kind.name)
+                    put("description", entry.description)
+                    put("season", entry.season)
+                    put("episode_number", entry.episodeNumber)
+                    put("genre", entry.genre)
+                    put("rating", entry.rating)
+                    put("year", entry.year)
+                    put("release_date", entry.releaseDate)
+                    put("director", entry.director)
+                    put("cast", entry.cast)
+                }
+                db.insertWithOnConflict(TABLE, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
         }
     }
 
