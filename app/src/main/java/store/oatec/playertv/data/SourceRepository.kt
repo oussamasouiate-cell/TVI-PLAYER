@@ -40,6 +40,50 @@ class SourceRepository {
         }
     }
 
+    /** Parse an Xtream catalogue into bounded batches; retain only the first page for initial rendering. */
+    suspend fun loadCatalogBatched(
+        source: PlayerSource,
+        section: CatalogSection,
+        onBatch: (List<MediaEntry>) -> Unit,
+    ): SourceCatalog {
+        if (source.type != SourceType.XTREAM) {
+            val result = loadCatalog(source, section)
+            val entries = when (section) {
+                CatalogSection.LIVE -> result.liveChannels
+                CatalogSection.MOVIES -> result.movies
+                CatalogSection.SERIES -> result.series
+            }
+            entries.chunked(DISPLAY_PAGE_SIZE).forEach(onBatch)
+            return when (section) {
+                CatalogSection.LIVE -> SourceCatalog(liveChannels = entries.take(DISPLAY_PAGE_SIZE))
+                CatalogSection.MOVIES -> SourceCatalog(movies = entries.take(DISPLAY_PAGE_SIZE))
+                CatalogSection.SERIES -> SourceCatalog(series = entries.take(DISPLAY_PAGE_SIZE))
+            }
+        }
+        require(source.username.isNotBlank() && source.password.isNotBlank()) {
+            "Enter the username and password for this Xtream source."
+        }
+        val entries = when (section) {
+            CatalogSection.LIVE -> readStreamEntries(
+                apiUrl(source, "get_live_streams"), source,
+                loadCategoriesOrEmpty(apiUrl(source, "get_live_categories")), "live", MAX_CHANNELS, onBatch,
+            )
+            CatalogSection.MOVIES -> readStreamEntries(
+                apiUrl(source, "get_vod_streams"), source,
+                loadCategoriesOrEmpty(apiUrl(source, "get_vod_categories")), "movie", MAX_VOD_ITEMS, onBatch,
+            )
+            CatalogSection.SERIES -> readStreamEntries(
+                apiUrl(source, "get_series"), source,
+                loadCategoriesOrEmpty(apiUrl(source, "get_series_categories")), "series", MAX_VOD_ITEMS, onBatch,
+            )
+        }
+        return when (section) {
+            CatalogSection.LIVE -> SourceCatalog(liveChannels = entries)
+            CatalogSection.MOVIES -> SourceCatalog(movies = entries)
+            CatalogSection.SERIES -> SourceCatalog(series = entries)
+        }
+    }
+
     suspend fun loadSeriesEpisodes(source: PlayerSource, seriesId: String): List<MediaEntry> {
         require(source.type == SourceType.XTREAM) { "Series details require an Xtream source." }
         val response = readText(apiUrl(source, "get_series_info", "series_id" to seriesId), MAX_SERIES_RESPONSE_BYTES)
@@ -130,6 +174,7 @@ class SourceRepository {
         categories: Map<String, String>,
         type: String,
         maxItems: Int,
+        onBatch: ((List<MediaEntry>) -> Unit)? = null,
     ): List<MediaEntry> = withResponse(url, MAX_STREAM_RESPONSE_BYTES) { connection ->
         val kind = when (type) {
             "movie" -> MediaKind.MOVIE
@@ -140,11 +185,13 @@ class SourceRepository {
             if (reader.peek() != JsonToken.BEGIN_ARRAY) throw IOException("The provider returned an unexpected response.")
             reader.beginArray()
             val results = ArrayList<MediaEntry>(minOf(maxItems, INITIAL_STREAM_CAPACITY))
+            val batch = ArrayList<MediaEntry>(DISPLAY_PAGE_SIZE)
+            var totalItems = 0
             while (reader.hasNext()) {
                 // Never silently return a partial catalogue. If a provider exceeds
                 // the configured safety limit, fail explicitly rather than making
                 // the user believe the list is complete.
-                if (results.size >= maxItems) {
+                if (totalItems >= maxItems) {
                     throw IOException("The provider returned more than $maxItems items. The catalogue safety limit was reached.")
                 }
                 if (reader.peek() != JsonToken.BEGIN_OBJECT) {
@@ -191,7 +238,7 @@ class SourceRepository {
                 reader.endObject()
                 if (id.isBlank()) continue
                 val safeExtension = safeExtension(extension, if (type == "live") "ts" else "mp4")
-                results += MediaEntry(
+                val entry = MediaEntry(
                     id = "${source.id}:$type:$id",
                     title = title.ifBlank { "Untitled" },
                     category = categories[categoryId].orEmpty().ifBlank {
@@ -208,8 +255,20 @@ class SourceRepository {
                     director = director,
                     cast = cast,
                 )
+                totalItems++
+                if (onBatch == null) {
+                    results += entry
+                } else {
+                    if (results.size < DISPLAY_PAGE_SIZE) results += entry
+                    batch += entry
+                    if (batch.size >= DISPLAY_PAGE_SIZE) {
+                        onBatch(batch.toList())
+                        batch.clear()
+                    }
+                }
             }
             reader.endArray()
+            if (batch.isNotEmpty()) onBatch?.invoke(batch.toList())
             results
         }
     }
@@ -316,6 +375,7 @@ class SourceRepository {
         const val MAX_VOD_ITEMS = 20_000
         const val MAX_REDIRECTS = 5
         const val INITIAL_STREAM_CAPACITY = 128
+        const val DISPLAY_PAGE_SIZE = 500
         const val MAX_FIELD_LENGTH = 512
         const val MAX_TITLE_LENGTH = 300
         const val MAX_LOGO_LENGTH = 2_048
