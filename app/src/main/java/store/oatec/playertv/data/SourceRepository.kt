@@ -33,7 +33,7 @@ class SourceRepository {
                 if (section != CatalogSection.LIVE) return SourceCatalog()
                 val file = File(source.serverUrl)
                 require(file.isFile) { "The imported playlist file is missing." }
-                require(file.length() <= MAX_SOURCE_BYTES) { "The playlist exceeds the 40 MB import limit." }
+                require(file.length() <= MAX_SOURCE_BYTES) { "The playlist exceeds the 512 MB import limit." }
                 SourceCatalog(liveChannels = parseChannels(file.readText(Charsets.UTF_8), source.id))
             }
             SourceType.XTREAM -> loadXtreamCatalog(source, section)
@@ -48,7 +48,7 @@ class SourceRepository {
     ): SourceCatalog {
         if (source.type == SourceType.M3U || source.type == SourceType.LOCAL_M3U) {
             val firstPage = ArrayList<MediaEntry>(DISPLAY_PAGE_SIZE)
-            val count = when (source.type) {
+            when (source.type) {
                 SourceType.M3U -> withResponse(source.serverUrl, MAX_STREAM_RESPONSE_BYTES) { connection ->
                     InputStreamReader(
                         LimitedInputStream(connection.inputStream, MAX_STREAM_RESPONSE_BYTES),
