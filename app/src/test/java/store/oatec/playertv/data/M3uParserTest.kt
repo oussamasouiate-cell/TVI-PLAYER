@@ -19,6 +19,7 @@ class M3uParserTest {
         assertEquals("News", channel.category)
         assertEquals("https://img.test/logo.png", channel.logoUrl)
         assertEquals("https://stream.test/live.m3u8", channel.streamUrl)
+        assertEquals("news.one", channel.epgChannelId)
         assertTrue(channel.id.startsWith("source-1:"))
     }
 
@@ -39,7 +40,7 @@ class M3uParserTest {
     fun streamingParserEmitsBoundedBatchesAndReturnsTotalCount() {
         val playlist = """
             #EXTM3U
-            #EXTINF:-1 group-title="News",One
+            #EXTINF:-1 tvg-id="news.one" group-title="News",One
             https://stream.test/one.ts
             #EXTINF:-1 group-title="News",Two
             https://stream.test/two.ts
@@ -59,6 +60,7 @@ class M3uParserTest {
         assertEquals(3, count)
         assertEquals(listOf(2, 1), batches.map { it.size })
         assertEquals(listOf("One", "Two", "Three"), batches.flatten().map { it.title })
+        assertEquals("news.one", batches.flatten().first().epgChannelId)
     }
 
     @Test
