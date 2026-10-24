@@ -2781,7 +2781,7 @@ private fun KidsDashboard(
 /** Applies the device-local Kids Mode gate to every loaded catalogue page. */
 private fun applyKidsModeFilter(entries: List<MediaEntry>, preferences: PlayerPreferences): List<MediaEntry> {
     if (!preferences.kidsModeEnabled()) return entries
-    val childSafeTerms = listOf("kids", "children", "cartoon", "animation", "family", "educational", "education", "junior", "طفل", "أطفال", "كرتون", "عائلي")
+    val childSafeTerms = listOf("kids", "children", "educational", "education", "junior", "preschool", "toddler", "disney junior", "nick jr", "طفل", "أطفال", "براعم")
     return entries.filter { entry ->
         val searchable = (entry.title + " " + entry.category).lowercase()
         val classifiedSafe = childSafeTerms.any { it in searchable }
