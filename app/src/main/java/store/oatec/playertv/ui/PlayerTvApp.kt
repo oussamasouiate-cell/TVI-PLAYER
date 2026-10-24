@@ -187,6 +187,20 @@ fun PlayerTvApp() {
     val scope = rememberCoroutineScope()
     val currentSection = Section.entries.firstOrNull { it.name == section } ?: Section.LIVE
 
+    // Keep Home navigation lightweight: clear transient detail/player state immediately,
+    // rather than leaving episode lists and selection state attached to the previous screen.
+    fun goHome() {
+        section = Section.HOME.name
+        selectedCategory = "All"
+        search = ""
+        selectedMedia = null
+        selectedDetails = null
+        pendingSeries = null
+        episodes = emptyList()
+        episodesBusy = false
+        message = ""
+    }
+
     // Handle Android system back on phones as well as TV remote keys.
     BackHandler(enabled = currentSection != Section.LIVE) {
         section = Section.LIVE.name
@@ -493,25 +507,25 @@ fun PlayerTvApp() {
                 HomeDashboard(
                     compact = compactLandscape,
                     sourceName = activeSource?.name,
-                    onSelect = { section = it.name; selectedCategory = "All"; search = "" },
+                    onSelect = { section = it.name; selectedCategory = "All"; search = ""; selectedMedia = null; selectedDetails = null },
                     onExit = { (context as? Activity)?.finishAndRemoveTask() },
                 )
             } else {
             Column(Modifier.fillMaxSize()) {
                 // LIVE TV is a clean, full-screen channel list: no navigation strip,
                 // title/search bar, or divider above the channels.
-                if (currentSection !in setOf(Section.LIVE, Section.MOVIES, Section.SERIES)) {
+                if (currentSection !in setOf(Section.LIVE, Section.MOVIES, Section.SERIES, Section.SETTINGS)) {
                     NavigationRail(
                         selected = if (currentSection == Section.SOURCES) Section.SETTINGS else currentSection,
                         sourceName = activeSource?.name,
                         compact = compactLandscape,
-                        onSelect = { section = it.name; selectedCategory = "All"; search = "" },
-                        onHome = { section = Section.HOME.name; selectedCategory = "All"; search = "" },
+                        onSelect = { section = it.name; selectedCategory = "All"; search = ""; selectedMedia = null; selectedDetails = null },
+                        onHome = { goHome() },
                         onExit = { (context as? Activity)?.finishAndRemoveTask() },
                     )
                 }
                 Column(Modifier.weight(1f).fillMaxWidth()) {
-                    if (currentSection !in setOf(Section.LIVE, Section.MOVIES, Section.SERIES)) {
+                    if (currentSection !in setOf(Section.LIVE, Section.MOVIES, Section.SERIES, Section.SETTINGS)) {
                         TopBar(
                             title = currentSection.label,
                             sourceName = activeSource?.name,
@@ -539,7 +553,7 @@ fun PlayerTvApp() {
                             preferences = preferences,
                             preferenceRevision = preferenceRevision,
                             onSearch = { search = it },
-                            onHome = { section = Section.HOME.name; selectedCategory = "All"; search = "" },
+                            onHome = { goHome() },
                             message = message,
                             busy = busy,
                             onCategory = { selectedCategory = it },
@@ -554,7 +568,7 @@ fun PlayerTvApp() {
                         )
                         Section.MOVIES -> MediaScreen(
                             title = "Movies",
-                            onHome = { section = Section.HOME.name; selectedCategory = "All"; search = "" },
+                            onHome = { goHome() },
                             onSearch = { search = it },
                             entries = catalog.movies,
                             search = search,
@@ -567,7 +581,7 @@ fun PlayerTvApp() {
                             onFavorite = { item -> preferences.setFavorite(item.id, item.id !in preferences.favorites()); preferenceRevision++ },
                         )
                         Section.SERIES -> SeriesScreen(
-                            onHome = { section = Section.HOME.name; selectedCategory = "All"; search = "" },
+                            onHome = { goHome() },
                             onSearch = { search = it },
                             entries = catalog.series,
                             episodes = episodes,
@@ -614,6 +628,7 @@ fun PlayerTvApp() {
                             onImport = { filePicker.launch(arrayOf("audio/x-mpegurl", "application/vnd.apple.mpegurl", "text/plain", "application/octet-stream")) },
                         )
                         Section.SETTINGS -> SettingsScreen(
+                            onHome = { goHome() },
                             preferences = preferences,
                             aboutRepository = aboutRepository,
                             onManageSources = { section = Section.SOURCES.name },
@@ -840,6 +855,7 @@ private fun InitialSetupScreen(
 
 @Composable
 private fun SettingsScreen(
+    onHome: () -> Unit,
     preferences: PlayerPreferences,
     aboutRepository: OatecAboutRepository,
     onManageSources: () -> Unit,
@@ -886,9 +902,19 @@ private fun SettingsScreen(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(28.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Column {
-            Text("Settings", color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Text("Playback preferences and OATEC information", color = TextMuted, fontSize = 12.sp)
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            OutlinedButton(
+                onClick = onHome,
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 7.dp),
+            ) { Text("⌂ Home", fontSize = 12.sp) }
+            Column(Modifier.weight(1f)) {
+                Text("SETTINGS", color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                Text("Playback, sources and OATEC preferences", color = TextMuted, fontSize = 12.sp)
+            }
         }
         Surface(color = Panel, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
             Row(
