@@ -6,6 +6,7 @@ import android.content.res.Configuration
 import android.content.Intent
 import android.net.Uri
 import android.view.KeyEvent as AndroidKeyEvent
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -177,7 +178,14 @@ fun PlayerTvApp() {
     var epgStatus by remember(activeSourceId) { mutableStateOf("") }
     var epgClock by remember { mutableStateOf(System.currentTimeMillis()) }
     val scope = rememberCoroutineScope()
-    val currentSection = Section.entries.firstOrNull { it.name == section } ?: Section.HOME
+    val currentSection = Section.entries.firstOrNull { it.name == section } ?: Section.LIVE
+
+    // Handle Android system back on phones as well as TV remote keys.
+    BackHandler(enabled = currentSection != Section.LIVE) {
+        section = Section.LIVE.name
+        selectedCategory = "All"
+        search = ""
+    }
 
     fun refresh(source: PlayerSource, requestedSection: Section = currentSection, force: Boolean = false) {
         val catalogSection = when (requestedSection) {
@@ -475,7 +483,7 @@ fun PlayerTvApp() {
                     sourceName = activeSource?.name,
                     compact = compactLandscape,
                     onSelect = { section = it.name; selectedCategory = "All"; search = "" },
-                    onHome = { section = Section.LIVE.name; selectedCategory = "All"; search = "" },
+                    onHome = { if (currentSection == Section.LIVE) { activeSource?.let { refresh(it, Section.LIVE, force = true) } } else { section = Section.LIVE.name; selectedCategory = "All"; search = "" } },
                     onExit = { (context as? Activity)?.finishAndRemoveTask() },
                 )
                 Column(Modifier.weight(1f).fillMaxWidth()) {
@@ -1324,7 +1332,31 @@ private fun NavigationRail(
                 Text("Exit", fontSize = 10.sp)
             }
         }
-        // Navigation destinations open their actual content screens directly; no intermediate dashboard.
+        // Compact destinations replace the removed oversized top strip. Each opens content directly.
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            listOf(
+                Section.LIVE to "LIVE TV",
+                Section.MOVIES to "Movies",
+                Section.SERIES to "Series",
+                Section.SETTINGS to "Settings",
+                Section.SOURCES to "Sources",
+            ).forEach { (destination, label) ->
+                OutlinedButton(
+                    onClick = { onSelect(destination) },
+                    contentPadding = PaddingValues(horizontal = if (compact) 9.dp else 13.dp, vertical = 2.dp),
+                    border = BorderStroke(1.dp, if (selected == destination) Lime else Color.White.copy(alpha = 0.18f)),
+                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                        contentColor = if (selected == destination) Lime else TextMain,
+                    ),
+                ) {
+                    Text(label, fontSize = if (compact) 10.sp else 12.sp, maxLines = 1)
+                }
+            }
+        }
     }
 }
 
