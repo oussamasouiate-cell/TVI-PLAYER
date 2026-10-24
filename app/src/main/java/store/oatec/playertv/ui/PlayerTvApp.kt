@@ -1669,7 +1669,7 @@ private fun MediaScreen(
     var selectedShelf by rememberSaveable(title) { mutableStateOf("All") }
     val shelves = remember(entries, title) {
         val providerCategories = entries.map { it.category.trim() }.filter { it.isNotBlank() && !it.equals("Other", true) }.distinct().sortedBy { it.lowercase() }
-        val curated = listOf("Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "Horror", "Romance", "Sci-Fi", "Thriller")
+        val curated = listOf("Action", "Adventure", "Animation", "Biography", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Music", "Mystery", "Romance", "Sci-Fi", "Sport", "Thriller", "War", "Western")
         val knownGenres = entries.flatMap { entry ->
             (entry.genre + "," + entry.title).split(",", "|", "/", "·").map { it.trim() }
         }.mapNotNull { raw -> curated.firstOrNull { it.equals(raw, true) } }.distinct().sorted()
@@ -1752,6 +1752,24 @@ private fun qualityLabel(entry: MediaEntry): String {
         listOf("720p", "hd").any { it in text } -> "HD"
         else -> ""
     }
+}
+
+private fun streamQualityRank(entry: MediaEntry): Int = when (qualityLabel(entry)) {
+    "4K" -> 3
+    "1080p" -> 2
+    "HD" -> 1
+    else -> 0
+}
+
+private fun sameChannelIdentity(first: MediaEntry, second: MediaEntry): Boolean {
+    fun identity(entry: MediaEntry): String = entry.title.lowercase()
+        .replace(Regex("\\b(4k|uhd|2160p|1080p|720p|fhd|hd|hevc|h265|h\\.265)\\b"), " ")
+        .replace(Regex("[^\\p{L}\\p{N}]"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+    val a = identity(first)
+    val b = identity(second)
+    return a.isNotBlank() && a == b
 }
 
 @Composable
@@ -1898,7 +1916,7 @@ private fun SeriesScreen(
     var selectedShelf by rememberSaveable { mutableStateOf("All") }
     val shelves = remember(entries) {
         val providerCategories = entries.map { it.category.trim() }.filter { it.isNotBlank() && !it.equals("Other", true) }.distinct().sortedBy { it.lowercase() }
-        val curated = listOf("Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "Horror", "Mystery", "Romance", "Sci-Fi", "Thriller")
+        val curated = listOf("Action", "Adventure", "Animation", "Biography", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Mystery", "Reality", "Romance", "Sci-Fi", "Sport", "Thriller", "War", "Western")
         val genres = entries.flatMap { it.genre.split(",", "|", "/", "·").map(String::trim) }
             .mapNotNull { raw -> curated.firstOrNull { it.equals(raw, true) } }.distinct().sorted()
         listOf("All") + (providerCategories + genres).distinct().filterNot { it.equals("All", true) }
@@ -2216,6 +2234,19 @@ private fun PlaybackDialog(
             override fun onPlayerError(playbackException: PlaybackException) {
                 loading = false
                 error = playbackException.localizedMessage ?: "ExoPlayer couldn't play this stream. Check the URL and stream format."
+                // Separate 4K/HD playlist links cannot switch by bandwidth measurement alone,
+                // but retry a clearly named lower-quality sibling after a live playback error.
+                if (latestEntry.kind == MediaKind.LIVE) {
+                    val currentRank = streamQualityRank(latestEntry)
+                    val sibling = channels
+                        .filter { it.id != latestEntry.id && it.kind == MediaKind.LIVE }
+                        .filter { sameChannelIdentity(it, latestEntry) && streamQualityRank(it) in 1 until currentRank }
+                        .maxByOrNull { streamQualityRank(it) }
+                    if (sibling != null) {
+                        onPlay(sibling)
+                        return
+                    }
+                }
                 if (latestPreferences.playbackEngine() == "auto" && activeEngine == "auto") {
                     activeEngine = "libvlc"
                     error = ""
