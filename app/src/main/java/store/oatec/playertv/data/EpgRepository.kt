@@ -23,8 +23,8 @@ data class EpgProgram(
 }
 
 /**
- * Parses standard XMLTV programme entries. This is a local parser only; fetching and
- * associating a guide URL with a source are handled by the source/settings layer.
+ * Parses standard XMLTV programme entries and provides current/next lookups.
+ * Fetching a guide URL and associating it with a source are handled by the source layer.
  */
 object EpgRepository {
     private const val MAX_XML_CHARS = 12 * 1024 * 1024
@@ -42,6 +42,24 @@ object EpgRepository {
         factory.newSAXParser().parse(InputSource(StringReader(xml)), handler)
         return handler.programmes.toList()
     }
+
+    /** Returns the programme airing now on the requested XMLTV channel id, if known. */
+    fun currentProgram(
+        programmes: List<EpgProgram>,
+        channelId: String,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): EpgProgram? = programmes.asSequence()
+        .filter { it.channelId == channelId && it.isOnAir(nowMillis) }
+        .minByOrNull { it.startTimeMillis }
+
+    /** Returns the next programme whose start time is at or after now. */
+    fun nextProgram(
+        programmes: List<EpgProgram>,
+        channelId: String,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): EpgProgram? = programmes.asSequence()
+        .filter { it.channelId == channelId && it.startTimeMillis >= nowMillis && it.endTimeMillis > it.startTimeMillis }
+        .minByOrNull { it.startTimeMillis }
 
     private class ProgrammeHandler : DefaultHandler() {
         val programmes = mutableListOf<EpgProgram>()
@@ -99,8 +117,9 @@ object EpgRepository {
                 timeZone = TimeZone.getTimeZone("UTC")
             }
             val position = ParsePosition(0)
-            val date = format.parse(value.trim(), position)
-            if (date != null && position.index == value.trim().length) return date.time
+            val normalized = value.trim()
+            val date = format.parse(normalized, position)
+            if (date != null && position.index == normalized.length) return date.time
         }
         return null
     }
