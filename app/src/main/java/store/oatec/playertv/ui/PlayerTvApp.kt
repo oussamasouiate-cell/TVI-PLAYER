@@ -581,7 +581,7 @@ fun PlayerTvApp() {
                             preferences = preferences,
                             recentEntries = preferences.recentlyWatched(catalog.movies + episodes),
                             onLoadMore = { loadMore(Section.MOVIES) },
-                            onPlay = { selectedMedia = it },
+                            onPlay = { selectedDetails = it },
                             onFavorite = { item -> preferences.setFavorite(item.id, item.id !in preferences.favorites()); preferenceRevision++ },
                         )
                         Section.SERIES -> SeriesScreen(
@@ -1666,11 +1666,27 @@ private fun MediaScreen(
     onPlay: (MediaEntry) -> Unit,
     onFavorite: (MediaEntry) -> Unit,
 ) {
-    val filtered = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) }
+    var selectedShelf by rememberSaveable(title) { mutableStateOf("All") }
+    val shelves = remember(entries, title) {
+        val providerCategories = entries.map { it.category.trim() }.filter { it.isNotBlank() && !it.equals("Other", true) }.distinct().sortedBy { it.lowercase() }
+        val curated = listOf("Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "Horror", "Romance", "Sci-Fi", "Thriller")
+        val knownGenres = entries.flatMap { entry ->
+            (entry.genre + "," + entry.title).split(",", "|", "/", "·").map { it.trim() }
+        }.mapNotNull { raw -> curated.firstOrNull { it.equals(raw, true) } }.distinct().sorted()
+        listOf("All") + (providerCategories + knownGenres).distinct().filterNot { it.equals("All", true) }
+    }
+    val searched = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) || it.genre.contains(search, true) }
+    val filtered = if (selectedShelf == "All") searched else if (selectedShelf in listOf("4K", "UHD", "1080p", "HD")) {
+        searched.filter { qualityLabel(it).equals(selectedShelf, true) || (selectedShelf == "HD" && qualityLabel(it) == "1080p") }
+    } else searched.filter { entry ->
+        entry.category.equals(selectedShelf, true) ||
+            entry.genre.split(",", "|", "/", "·").any { it.trim().equals(selectedShelf, true) } ||
+            entry.title.contains(selectedShelf, true)
+    }
     val gridState = rememberLazyGridState()
     val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-    LaunchedEffect(lastVisible, entries.size) {
-        if (entries.isNotEmpty() && lastVisible >= gridState.layoutInfo.totalItemsCount - 6) onLoadMore()
+    LaunchedEffect(lastVisible, entries.size, selectedShelf, search) {
+        if (entries.isNotEmpty() && selectedShelf == "All" && search.isBlank() && lastVisible >= gridState.layoutInfo.totalItemsCount - 6) onLoadMore()
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1682,10 +1698,25 @@ private fun MediaScreen(
             SearchField(search, onSearch, Modifier.width(190.dp))
         }
         if (message.isNotBlank()) Text(message, color = TextMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(12.dp))
+        if (shelves.size > 1) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 10.dp)) {
+                items(shelves, key = { "shelf:$it" }) { shelf ->
+                    CategoryPill(shelf, selectedShelf == shelf) { selectedShelf = shelf; scope@ run { } }
+                }
+            }
+        }
+        if (title.equals("Movies", true) && search.isBlank() && selectedShelf == "All") {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 10.dp)) {
+                listOf("4K", "UHD", "1080p", "HD").forEach { quality ->
+                    val count = entries.count { qualityLabel(it).equals(quality, true) || (quality == "HD" && qualityLabel(it) == "1080p") }
+                    if (count > 0) CategoryPill("$quality · $count", false) { selectedShelf = quality }
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
         when {
             busy && entries.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingState("Loading library") }
-            filtered.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { EmptyState("Nothing to watch yet", message.ifBlank { "This source may not provide ${title.lowercase()} metadata." }) }
+            filtered.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { EmptyState("Nothing to watch yet", message.ifBlank { "No titles match this category. Categories depend on the metadata supplied by your provider." }) }
             else -> LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 176.dp),
                 state = gridState,
@@ -1694,32 +1725,32 @@ private fun MediaScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                if (recentEntries.isNotEmpty() && search.isBlank()) {
+                if (recentEntries.isNotEmpty() && search.isBlank() && selectedShelf == "All") {
                     item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "continue-watching-heading") {
                         Text("Continue watching", color = TextMain, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                     }
                     gridItems(recentEntries.take(8), key = { "recent:${it.id}" }) { entry ->
-                        PosterCard(
-                            entry = entry,
-                            favorite = entry.id in preferences.favorites(),
-                            onClick = { onPlay(entry) },
-                            onFavorite = { onFavorite(entry) },
-                        )
+                        PosterCard(entry = entry, favorite = entry.id in preferences.favorites(), onClick = { onPlay(entry) }, onFavorite = { onFavorite(entry) })
                     }
                     item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "all-titles-heading") {
-                        Text("All titles", color = TextMain, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        Text(if (selectedShelf == "All") "Explore all titles" else selectedShelf, color = TextMain, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                     }
                 }
                 gridItems(filtered, key = { it.id }) { entry ->
-                    PosterCard(
-                        entry = entry,
-                        favorite = entry.id in preferences.favorites(),
-                        onClick = { onPlay(entry) },
-                        onFavorite = { onFavorite(entry) },
-                    )
+                    PosterCard(entry = entry, favorite = entry.id in preferences.favorites(), onClick = { onPlay(entry) }, onFavorite = { onFavorite(entry) })
                 }
             }
         }
+    }
+}
+
+private fun qualityLabel(entry: MediaEntry): String {
+    val text = "${entry.title} ${entry.category} ${entry.streamUrl}".lowercase()
+    return when {
+        listOf("2160p", "4k", "uhd", "hevc 4k").any { it in text } -> "4K"
+        listOf("1080p", "fhd", "full hd").any { it in text } -> "1080p"
+        listOf("720p", "hd").any { it in text } -> "HD"
+        else -> ""
     }
 }
 
@@ -1739,6 +1770,12 @@ private fun PosterCard(entry: MediaEntry, favorite: Boolean, onClick: () -> Unit
                 if (entry.logoUrl.isNotBlank()) AsyncImage(model = entry.logoUrl, contentDescription = entry.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                 else Box(contentAlignment = Alignment.Center) {
                     Text(entry.title.take(1).uppercase(), color = Lime, fontSize = 35.sp, fontWeight = FontWeight.Black)
+                }
+            }
+            val quality = qualityLabel(entry)
+            if (quality.isNotBlank()) {
+                Surface(color = Lime, shape = RoundedCornerShape(bottomEnd = 8.dp), modifier = Modifier.align(Alignment.TopStart)) {
+                    Text(quality, color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp))
                 }
             }
             TextButton(onClick = onFavorite, modifier = Modifier.align(Alignment.TopEnd)) {
