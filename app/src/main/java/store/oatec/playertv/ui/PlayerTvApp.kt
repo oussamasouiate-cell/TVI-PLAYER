@@ -269,7 +269,7 @@ fun PlayerTvApp() {
                 val page = withContext(Dispatchers.IO) {
                     val total = mediaCatalogStore.count(source.id, catalogSection.name)
                     if (currentSize.toLong() >= total) emptyList()
-                    else mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = currentSize)
+                    else mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = currentSize, search = search)
                 }
                 if (source.id == activeSourceId && page.isNotEmpty()) {
                     catalog = when (catalogSection) {
@@ -296,6 +296,28 @@ fun PlayerTvApp() {
     LaunchedEffect(activeSourceId, section) {
         val source = sources.firstOrNull { it.id == activeSourceId } ?: return@LaunchedEffect
         refresh(source)
+    }
+
+    LaunchedEffect(activeSourceId, section, search, loadedCatalogs) {
+        val source = sources.firstOrNull { it.id == activeSourceId } ?: return@LaunchedEffect
+        val catalogSection = when (currentSection) {
+            Section.LIVE -> CatalogSection.LIVE
+            Section.MOVIES -> CatalogSection.MOVIES
+            Section.SERIES -> CatalogSection.SERIES
+            else -> return@LaunchedEffect
+        }
+        val loadKey = "${source.id}:${catalogSection.name}"
+        if (loadKey !in loadedCatalogs) return@LaunchedEffect
+        val requestedSearch = search
+        val filteredPage = withContext(Dispatchers.IO) {
+            mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = 0, search = requestedSearch)
+        }
+        if (source.id != activeSourceId || requestedSearch != search || currentSection.name != section) return@LaunchedEffect
+        catalog = when (catalogSection) {
+            CatalogSection.LIVE -> catalog.copy(liveChannels = filteredPage)
+            CatalogSection.MOVIES -> catalog.copy(movies = filteredPage)
+            CatalogSection.SERIES -> catalog.copy(series = filteredPage)
+        }
     }
 
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
