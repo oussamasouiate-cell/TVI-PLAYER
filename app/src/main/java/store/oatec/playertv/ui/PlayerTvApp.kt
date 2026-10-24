@@ -512,7 +512,7 @@ fun PlayerTvApp() {
                             preferences = preferences,
                             recentEntries = preferences.recentlyWatched(catalog.movies + episodes),
                             onLoadMore = { loadMore(Section.MOVIES) },
-                            onPlay = { selectedDetails = it },
+                            onPlay = { selectedMedia = it },
                             onFavorite = { item -> preferences.setFavorite(item.id, item.id !in preferences.favorites()); preferenceRevision++ },
                         )
                         Section.SERIES -> SeriesScreen(
@@ -525,7 +525,6 @@ fun PlayerTvApp() {
                             preferences = preferences,
                             onLoadMore = { loadMore(Section.SERIES) },
                             onSelect = { series ->
-                                selectedDetails = series
                                 val source = activeSource
                                 if (source == null || source.type != SourceType.XTREAM) {
                                     message = "Series episodes require an Xtream source."
