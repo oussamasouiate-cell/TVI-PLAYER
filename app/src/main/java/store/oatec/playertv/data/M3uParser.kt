@@ -47,6 +47,7 @@ object M3uParser {
                             category = group.ifBlank { "Other" },
                             streamUrl = line,
                             logoUrl = metadata["tvg-logo"].orEmpty(),
+                            epgChannelId = metadata["tvg-id"].orEmpty(),
                         )
                     }
                     metadata = emptyMap()
@@ -110,6 +111,7 @@ object M3uParser {
                             category = group.ifBlank { "Other" },
                             streamUrl = line,
                             logoUrl = metadata["tvg-logo"].orEmpty(),
+                            epgChannelId = metadata["tvg-id"].orEmpty(),
                         )
                         count++
                         if (batch.size >= batchSize) { onBatch(batch.toList()); batch.clear() }
