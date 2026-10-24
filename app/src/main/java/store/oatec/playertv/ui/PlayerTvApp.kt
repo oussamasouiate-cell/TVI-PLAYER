@@ -156,6 +156,7 @@ fun PlayerTvApp() {
     val preferences = remember { PlayerPreferences(context) }
     val aboutRepository = remember { OatecAboutRepository() }
     var premiumCode by remember { mutableStateOf(runCatching { sourceStore.loadPremiumCode() }.getOrNull().orEmpty()) }
+    var kidsModeActive by remember { mutableStateOf(preferences.kidsModeEnabled()) }
     val catalogLoadMutex = remember { Mutex() }
     val sources = remember {
         mutableStateListOf<PlayerSource>().apply {
@@ -527,7 +528,7 @@ fun PlayerTvApp() {
                     }
                 },
         ) {
-            if (preferences.kidsModeEnabled()) {
+            if (kidsModeActive) {
                 KidsDashboard(
                     compact = compactLandscape,
                     section = currentSection,
@@ -675,6 +676,10 @@ fun PlayerTvApp() {
                         Section.SETTINGS -> SettingsScreen(
                             onHome = { goHome() },
                             preferences = preferences,
+                            onKidsModeChanged = { enabled ->
+                                kidsModeActive = enabled
+                                if (enabled) section = Section.HOME.name
+                            },
                             aboutRepository = aboutRepository,
                             onManageSources = { section = Section.SOURCES.name },
                             premiumCode = premiumCode,
@@ -710,6 +715,7 @@ fun PlayerTvApp() {
                         TextButton(onClick = {
                             if (preferences.verifyKidsPin(kidsExitPinInput)) {
                                 preferences.setKidsModeEnabled(false)
+                                kidsModeActive = false
                                 section = Section.HOME.name
                                 search = ""
                                 kidsExitPinInput = ""
@@ -937,6 +943,7 @@ private fun InitialSetupScreen(
 private fun SettingsScreen(
     onHome: () -> Unit,
     preferences: PlayerPreferences,
+    onKidsModeChanged: (Boolean) -> Unit,
     aboutRepository: OatecAboutRepository,
     onManageSources: () -> Unit,
     premiumCode: String,
@@ -1078,6 +1085,7 @@ private fun SettingsScreen(
                             showKidsExitDialog = true
                         } else {
                             kidsEnabled = preferences.setKidsModeEnabled(enabled)
+                            onKidsModeChanged(kidsEnabled)
                         }
                     })
                 }
@@ -1115,6 +1123,7 @@ private fun SettingsScreen(
                             TextButton(onClick = {
                                 if (preferences.clearKidsPin(clearKidsPinInput)) {
                                     kidsEnabled = false
+                                    onKidsModeChanged(false)
                                     showClearKidsPinDialog = false
                                     clearKidsPinInput = ""
                                     clearKidsPinError = ""
@@ -1223,6 +1232,7 @@ private fun SettingsScreen(
                                 val saved = if (preferences.hasKidsPin()) preferences.changeKidsPin(kidsCurrentPinInput, kidsPinInput) else preferences.setKidsPin(kidsPinInput)
                                 if (saved) {
                                     kidsEnabled = true
+                                    onKidsModeChanged(true)
                                     kidsPinSaved = true
                                     showKidsPinDialog = false
                                     kidsPinInput = ""
