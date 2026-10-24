@@ -438,7 +438,7 @@ fun PlayerTvApp() {
                     if (key.action != AndroidKeyEvent.ACTION_DOWN) return@onPreviewKeyEvent false
                     when (key.keyCode) {
                         AndroidKeyEvent.KEYCODE_BACK -> {
-                            if (currentSection != Section.LIVE) { section = Section.LIVE.name; true } else false
+                            if (currentSection !in setOf(Section.LIVE, Section.MOVIES, Section.SERIES)) { section = Section.LIVE.name; true } else false
                         }
                         AndroidKeyEvent.KEYCODE_CHANNEL_UP -> {
                             if (currentSection == Section.LIVE && catalog.liveChannels.isNotEmpty()) {
@@ -500,7 +500,7 @@ fun PlayerTvApp() {
             Column(Modifier.fillMaxSize()) {
                 // LIVE TV is a clean, full-screen channel list: no navigation strip,
                 // title/search bar, or divider above the channels.
-                if (currentSection != Section.LIVE) {
+                if (currentSection !in setOf(Section.LIVE, Section.MOVIES, Section.SERIES)) {
                     NavigationRail(
                         selected = if (currentSection == Section.SOURCES) Section.SETTINGS else currentSection,
                         sourceName = activeSource?.name,
@@ -511,7 +511,7 @@ fun PlayerTvApp() {
                     )
                 }
                 Column(Modifier.weight(1f).fillMaxWidth()) {
-                    if (currentSection != Section.LIVE) {
+                    if (currentSection !in setOf(Section.LIVE, Section.MOVIES, Section.SERIES)) {
                         TopBar(
                             title = currentSection.label,
                             sourceName = activeSource?.name,
@@ -554,6 +554,8 @@ fun PlayerTvApp() {
                         )
                         Section.MOVIES -> MediaScreen(
                             title = "Movies",
+                            onHome = { section = Section.HOME.name; selectedCategory = "All"; search = "" },
+                            onSearch = { search = it },
                             entries = catalog.movies,
                             search = search,
                             busy = busy,
@@ -565,6 +567,8 @@ fun PlayerTvApp() {
                             onFavorite = { item -> preferences.setFavorite(item.id, item.id !in preferences.favorites()); preferenceRevision++ },
                         )
                         Section.SERIES -> SeriesScreen(
+                            onHome = { section = Section.HOME.name; selectedCategory = "All"; search = "" },
+                            onSearch = { search = it },
                             entries = catalog.series,
                             episodes = episodes,
                             selectedSeries = pendingSeries,
@@ -1611,57 +1615,63 @@ private fun MediaScreen(
     message: String,
     preferences: PlayerPreferences,
     recentEntries: List<MediaEntry>,
+    onHome: () -> Unit,
+    onSearch: (String) -> Unit,
     onLoadMore: () -> Unit,
     onPlay: (MediaEntry) -> Unit,
     onFavorite: (MediaEntry) -> Unit,
 ) {
     val filtered = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) }
-    val mediaListState = rememberLazyListState()
-    val lastMediaVisible = mediaListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-    LaunchedEffect(lastMediaVisible, entries.size) {
-        if (entries.isNotEmpty() && lastMediaVisible >= mediaListState.layoutInfo.totalItemsCount - 3) onLoadMore()
+    val gridState = rememberLazyGridState()
+    val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+    LaunchedEffect(lastVisible, entries.size) {
+        if (entries.isNotEmpty() && lastVisible >= gridState.layoutInfo.totalItemsCount - 6) onLoadMore()
     }
-    Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 20.dp)) {
-        Text("$title | ${filtered.size}", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-        Spacer(Modifier.height(14.dp))
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) { Text("← Home", fontSize = 11.sp) }
+            Column(Modifier.weight(1f)) {
+                Text(title.uppercase(), color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                Text("${filtered.size} titles", color = TextMuted, fontSize = 11.sp)
+            }
+            SearchField(search, onSearch, Modifier.width(190.dp))
+        }
+        if (message.isNotBlank()) Text(message, color = TextMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(12.dp))
         when {
-            busy && entries.isEmpty() -> LoadingState("Loading library")
-            filtered.isEmpty() -> EmptyState("Nothing to watch yet", message.ifBlank { "This source may not provide ${title.lowercase()} metadata." })
-            else -> LazyColumn(state = mediaListState, verticalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(bottom = 28.dp)) {
-                if (recentEntries.isNotEmpty()) {
-                    item(key = "continue-watching") {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("Continue watching", color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                items(recentEntries.take(8), key = { it.id }) { entry ->
-                                    PosterCard(
-                                        entry = entry,
-                                        favorite = entry.id in preferences.favorites(),
-                                        onClick = { onPlay(entry) },
-                                        onFavorite = { onFavorite(entry) },
-                                    )
-                                }
-                            }
-                        }
+            busy && entries.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingState("Loading library") }
+            filtered.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { EmptyState("Nothing to watch yet", message.ifBlank { "This source may not provide ${title.lowercase()} metadata." }) }
+            else -> LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 176.dp),
+                state = gridState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 24.dp, end = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                if (recentEntries.isNotEmpty() && search.isBlank()) {
+                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "continue-watching-heading") {
+                        Text("Continue watching", color = TextMain, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    }
+                    items(recentEntries.take(8), key = { "recent:${it.id}" }) { entry ->
+                        PosterCard(
+                            entry = entry,
+                            favorite = entry.id in preferences.favorites(),
+                            onClick = { onPlay(entry) },
+                            onFavorite = { onFavorite(entry) },
+                        )
+                    }
+                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "all-titles-heading") {
+                        Text("All titles", color = TextMain, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                     }
                 }
-                val grouped = filtered.groupBy { it.category.ifBlank { "Other" } }.toSortedMap()
-                grouped.forEach { (category, items) ->
-                    item(key = "header:$category") {
-                        Text(category, color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
-                    }
-                    item(key = "row:$category") {
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(items, key = { it.id }) { entry ->
-                                PosterCard(
-                                    entry = entry,
-                                    favorite = entry.id in preferences.favorites(),
-                                    onClick = { onPlay(entry) },
-                                    onFavorite = { onFavorite(entry) },
-                                )
-                            }
-                        }
-                    }
+                gridItems(filtered, key = { it.id }) { entry ->
+                    PosterCard(
+                        entry = entry,
+                        favorite = entry.id in preferences.favorites(),
+                        onClick = { onPlay(entry) },
+                        onFavorite = { onFavorite(entry) },
+                    )
                 }
             }
         }
@@ -1796,81 +1806,90 @@ private fun SeriesScreen(
     busy: Boolean,
     message: String,
     preferences: PlayerPreferences,
+    onHome: () -> Unit,
+    onSearch: (String) -> Unit,
     onLoadMore: () -> Unit,
     onSelect: (MediaEntry) -> Unit,
     onPlay: (MediaEntry) -> Unit,
     onFavorite: (MediaEntry) -> Unit,
 ) {
-    Row(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-        Column(Modifier.weight(1f).fillMaxHeight()) {
-            Text("SERIES  •  SEASONS & EPISODES", color = Lime, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
-            if (message.isNotBlank()) Text(message, color = ErrorRed, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(14.dp))
-            val filtered = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) }
-            val seriesListState = rememberLazyListState()
-            val lastSeriesVisible = seriesListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            LaunchedEffect(lastSeriesVisible, entries.size) {
-                if (entries.isNotEmpty() && lastSeriesVisible >= seriesListState.layoutInfo.totalItemsCount - 3) onLoadMore()
+    val filtered = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) }
+    val gridState = rememberLazyGridState()
+    val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+    LaunchedEffect(lastVisible, entries.size) {
+        if (entries.isNotEmpty() && lastVisible >= gridState.layoutInfo.totalItemsCount - 6) onLoadMore()
+    }
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) { Text("← Home", fontSize = 11.sp) }
+            Column(Modifier.weight(1f)) {
+                Text("SERIES", color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                Text("Seasons and episodes • ${filtered.size} titles", color = TextMuted, fontSize = 11.sp)
             }
-            if (filtered.isEmpty()) EmptyState("No series available", message.ifBlank { "Series metadata is available from supported Xtream sources." })
-            else LazyColumn(state = seriesListState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(filtered, key = { it.id }) { entry ->
-                    var focused by remember { mutableStateOf(false) }
-                    Surface(
-                        color = if (focused || entry.id == selectedSeries?.id) Raised else Panel,
-                        border = if (focused) BorderStroke(1.dp, Lime) else null,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }.focusable().clickable { onSelect(entry) },
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(10.dp)) {
-                            AsyncImage(model = entry.logoUrl, contentDescription = null, modifier = Modifier.size(58.dp, 76.dp), contentScale = ContentScale.Crop)
-                            Column(Modifier.padding(start = 12.dp)) {
-                                Text(entry.title, color = TextMain, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                Text(entry.category, color = TextMuted, fontSize = 11.sp)
-                            }
-                            Spacer(Modifier.weight(1f))
-                            TextButton(onClick = { onFavorite(entry) }) {
-                                Text(if (entry.id in preferences.favorites()) "Saved" else "+ Fav", color = Lime, fontSize = 11.sp)
-                            }
-                        }
-                    }
-                }
-            }
+            SearchField(search, onSearch, Modifier.width(190.dp))
         }
-        Column(Modifier.weight(1f).fillMaxHeight()) {
-            Text(selectedSeries?.title ?: "SEASONS & EPISODES", color = Lime, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-            Spacer(Modifier.height(12.dp))
-            selectedSeries?.let { series ->
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
-                    if (series.logoUrl.isNotBlank()) {
-                        AsyncImage(series.logoUrl, contentDescription = series.title, modifier = Modifier.size(54.dp, 72.dp))
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        val details = listOfNotNull(
-                            series.year.takeIf(String::isNotBlank),
-                            series.rating.takeIf(String::isNotBlank)?.let { "Rating $it" },
-                            series.genre.takeIf(String::isNotBlank),
-                        )
-                        if (details.isNotEmpty()) Text(details.joinToString(" | "), color = GoldLight, fontSize = 10.sp)
-                        if (series.description.isNotBlank()) {
-                            Text(series.description, color = TextMuted, fontSize = 10.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        if (message.isNotBlank()) Text(message, color = ErrorRed, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(Modifier.weight(1.05f).fillMaxHeight()) {
+                when {
+                    filtered.isEmpty() -> EmptyState("No series available", message.ifBlank { "Series metadata is available from supported Xtream sources." })
+                    else -> LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 150.dp),
+                        state = gridState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 18.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        gridItems(filtered, key = { it.id }) { entry ->
+                            val selected = entry.id == selectedSeries?.id
+                            Column(Modifier.fillMaxWidth().clickable { onSelect(entry) }) {
+                                Surface(
+                                    color = Raised,
+                                    border = if (selected) BorderStroke(2.dp, Lime) else BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth().aspectRatio(0.68f),
+                                ) {
+                                    if (entry.logoUrl.isNotBlank()) AsyncImage(model = entry.logoUrl, contentDescription = entry.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                    else Box(contentAlignment = Alignment.Center) { Text(entry.title.take(1).uppercase(), color = Lime, fontSize = 32.sp, fontWeight = FontWeight.Black) }
+                                }
+                                Text(entry.title, color = TextMain, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp))
+                                TextButton(onClick = { onFavorite(entry) }, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)) {
+                                    Text(if (entry.id in preferences.favorites()) "★ Saved" else "+ Favorite", color = Lime, fontSize = 9.sp)
+                                }
+                            }
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
             }
-            when {
-                busy -> LoadingState("Loading episodes")
-                selectedSeries == null -> EmptyState("Select a series", "Choose a title to load its seasons and episodes.")
-                episodes.isEmpty() -> EmptyState("No episode data", "This provider did not return playable episodes.")
-                else -> LazyColumn {
-                    episodes.groupBy { it.season }.forEach { (season, seasonEpisodes) ->
-                        item(key = "season:$season") {
-                            Text(season, color = TextMain, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
-                        }
-                        items(seasonEpisodes, key = { it.id }) { episode ->
-                            OutlinedButton(onClick = { onPlay(episode) }, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-                                Text("${episode.episodeNumber.padStart(2, '0')}  ${episode.title}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Column(Modifier.weight(0.95f).fillMaxHeight().background(Panel, RoundedCornerShape(12.dp)).padding(12.dp)) {
+                Text(selectedSeries?.title ?: "SEASONS & EPISODES", color = Lime, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(8.dp))
+                selectedSeries?.let { series ->
+                    if (series.logoUrl.isNotBlank()) AsyncImage(series.logoUrl, contentDescription = series.title, modifier = Modifier.size(58.dp, 76.dp))
+                    val details = listOfNotNull(
+                        series.year.takeIf(String::isNotBlank),
+                        series.rating.takeIf(String::isNotBlank)?.let { "Rating $it" },
+                        series.genre.takeIf(String::isNotBlank),
+                    )
+                    if (details.isNotEmpty()) Text(details.joinToString(" | "), color = GoldLight, fontSize = 10.sp)
+                    if (series.description.isNotBlank()) Text(series.description, color = TextMuted, fontSize = 10.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(8.dp))
+                }
+                when {
+                    busy -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { LoadingState("Loading episodes") }
+                    selectedSeries == null -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { EmptyState("Select a series", "Choose a poster to load its seasons and episodes.") }
+                    episodes.isEmpty() -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { EmptyState("No episode data", "This provider did not return playable episodes.") }
+                    else -> LazyColumn(Modifier.weight(1f)) {
+                        episodes.groupBy { it.season }.forEach { (season, seasonEpisodes) ->
+                            item(key = "season:$season") {
+                                Text(season, color = TextMain, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
+                            }
+                            items(seasonEpisodes, key = { it.id }) { episode ->
+                                OutlinedButton(onClick = { onPlay(episode) }, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                                    Text("${episode.episodeNumber.padStart(2, '0')}  ${episode.title}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
                             }
                         }
                     }
