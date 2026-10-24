@@ -447,7 +447,6 @@ fun PlayerTvApp() {
                             preferences = preferences,
                             onBackHome = { section = Section.LIVE.name; search = ""; selectedCategory = "All" },
                             onSelect = { series ->
-                                selectedDetails = series
                                 val source = activeSource
                                 if (source == null || source.type != SourceType.XTREAM) {
                                     message = "Series episodes require an Xtream source."
