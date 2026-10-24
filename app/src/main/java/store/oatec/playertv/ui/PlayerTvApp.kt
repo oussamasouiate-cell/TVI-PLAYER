@@ -898,6 +898,9 @@ private fun SettingsScreen(
     var kidsPinInput by remember { mutableStateOf("") }
     var kidsCurrentPinInput by remember { mutableStateOf("") }
     var showClearKidsPinDialog by remember { mutableStateOf(false) }
+    var showKidsExitDialog by remember { mutableStateOf(false) }
+    var kidsExitPinInput by remember { mutableStateOf("") }
+    var kidsExitPinError by remember { mutableStateOf("") }
     var clearKidsPinInput by remember { mutableStateOf("") }
     var clearKidsPinError by remember { mutableStateOf("") }
     var kidsPinError by remember { mutableStateOf("") }
@@ -1009,6 +1012,11 @@ private fun SettingsScreen(
                             kidsCurrentPinInput = ""
                             kidsPinError = ""
                             showKidsPinDialog = true
+                        } else if (!enabled && preferences.hasKidsPin()) {
+                            // Exiting Kids Mode is parent-protected too.
+                            kidsExitPinInput = ""
+                            kidsExitPinError = ""
+                            showKidsExitDialog = true
                         } else {
                             kidsEnabled = preferences.setKidsModeEnabled(enabled)
                         }
@@ -1086,6 +1094,40 @@ private fun SettingsScreen(
                             }
                         },
                         dismissButton = { TextButton(onClick = { showKidsRulesDialog = false }) { Text("Close") } },
+                    )
+                }
+                if (showKidsExitDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showKidsExitDialog = false; kidsExitPinInput = ""; kidsExitPinError = "" },
+                        title = { Text("Parent PIN required") },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Enter the parent PIN to leave Kids Mode.", color = TextMuted, fontSize = 12.sp)
+                                OutlinedTextField(
+                                    value = kidsExitPinInput,
+                                    onValueChange = { value -> if (value.length <= 8 && value.all(Char::isDigit)) kidsExitPinInput = value },
+                                    label = { Text("Parent PIN") },
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                                )
+                                if (kidsExitPinError.isNotBlank()) Text(kidsExitPinError, color = ErrorRed, fontSize = 12.sp)
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                if (preferences.verifyKidsPin(kidsExitPinInput)) {
+                                    kidsEnabled = preferences.setKidsModeEnabled(false)
+                                    preferenceRevision++
+                                    showKidsExitDialog = false
+                                    kidsExitPinInput = ""
+                                    kidsExitPinError = ""
+                                } else kidsExitPinError = "Incorrect PIN."
+                            }) { Text("Exit Kids Mode") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showKidsExitDialog = false; kidsExitPinInput = ""; kidsExitPinError = "" }) { Text("Cancel") }
+                        },
                     )
                 }
                 if (showKidsPinDialog) {
