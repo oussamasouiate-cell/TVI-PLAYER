@@ -209,11 +209,20 @@ fun PlayerTvApp() {
         message = ""
     }
 
-    // Handle Android system back on phones as well as TV remote keys.
-    BackHandler(enabled = currentSection != Section.LIVE) {
-        section = Section.LIVE.name
-        selectedCategory = "All"
-        search = ""
+    // Keep children inside Kids Mode when Back is pressed, including from LIVE.
+    // A normal app cannot block Android Home/Recents without device kiosk/lock-task setup.
+    BackHandler(enabled = kidsModeActive || currentSection != Section.LIVE) {
+        if (kidsModeActive) {
+            section = Section.HOME.name
+            selectedCategory = "All"
+            search = ""
+            selectedMedia = null
+            selectedDetails = null
+        } else {
+            section = Section.LIVE.name
+            selectedCategory = "All"
+            search = ""
+        }
     }
 
     fun refresh(source: PlayerSource, requestedSection: Section = currentSection, force: Boolean = false) {
