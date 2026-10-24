@@ -478,29 +478,35 @@ fun PlayerTvApp() {
                 )
             } else {
             Column(Modifier.fillMaxSize()) {
-                NavigationRail(
-                    selected = if (currentSection == Section.SOURCES) Section.SETTINGS else currentSection,
-                    sourceName = activeSource?.name,
-                    compact = compactLandscape,
-                    onSelect = { section = it.name; selectedCategory = "All"; search = "" },
-                    onHome = { section = Section.HOME.name; selectedCategory = "All"; search = "" },
-                    onExit = { (context as? Activity)?.finishAndRemoveTask() },
-                )
-                Column(Modifier.weight(1f).fillMaxWidth()) {
-                    TopBar(
-                        title = currentSection.label,
+                // LIVE TV is a clean, full-screen channel list: no navigation strip,
+                // title/search bar, or divider above the channels.
+                if (currentSection != Section.LIVE) {
+                    NavigationRail(
+                        selected = if (currentSection == Section.SOURCES) Section.SETTINGS else currentSection,
                         sourceName = activeSource?.name,
-                        search = search,
-                        onSearch = { search = it },
-                        busy = busy,
-                        onRefresh = { activeSource?.let { refresh(it, currentSection, force = true) } },
-                        showRefresh = currentSection in setOf(Section.LIVE, Section.MOVIES, Section.SERIES),
                         compact = compactLandscape,
-                        onAddSource = { showAddSource = true },
-                        onNumberPad = { showNumberPad = true },
-                        numberInput = numberInput,
+                        onSelect = { section = it.name; selectedCategory = "All"; search = "" },
+                        onHome = { section = Section.HOME.name; selectedCategory = "All"; search = "" },
+                        onExit = { (context as? Activity)?.finishAndRemoveTask() },
                     )
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                }
+                Column(Modifier.weight(1f).fillMaxWidth()) {
+                    if (currentSection != Section.LIVE) {
+                        TopBar(
+                            title = currentSection.label,
+                            sourceName = activeSource?.name,
+                            search = search,
+                            onSearch = { search = it },
+                            busy = busy,
+                            onRefresh = { activeSource?.let { refresh(it, currentSection, force = true) } },
+                            showRefresh = currentSection in setOf(Section.LIVE, Section.MOVIES, Section.SERIES),
+                            compact = compactLandscape,
+                            onAddSource = { showAddSource = true },
+                            onNumberPad = { showNumberPad = true },
+                            numberInput = numberInput,
+                        )
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                    }
                     when (currentSection) {
                         Section.HOME -> Unit // HomeDashboard is rendered above this content switch.
                         Section.LIVE -> LiveScreen(
