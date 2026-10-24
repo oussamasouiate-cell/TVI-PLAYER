@@ -76,6 +76,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalConfiguration
@@ -1634,7 +1635,7 @@ private fun MediaScreen(
 @Composable
 private fun PosterCard(entry: MediaEntry, favorite: Boolean, onClick: () -> Unit, onFavorite: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    Column(Modifier.width(142.dp)) {
+    Column(Modifier.width(176.dp)) {
         Box(
             Modifier.fillMaxWidth().aspectRatio(0.68f).onFocusChanged { focused = it.isFocused }.focusable().clickable(onClick = onClick),
         ) {
@@ -1644,7 +1645,7 @@ private fun PosterCard(entry: MediaEntry, favorite: Boolean, onClick: () -> Unit
                 border = if (focused) BorderStroke(2.dp, Lime) else null,
                 modifier = Modifier.fillMaxSize(),
             ) {
-                if (entry.logoUrl.isNotBlank()) AsyncImage(entry.logoUrl, contentDescription = entry.title, modifier = Modifier.fillMaxSize())
+                if (entry.logoUrl.isNotBlank()) AsyncImage(model = entry.logoUrl, contentDescription = entry.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                 else Box(contentAlignment = Alignment.Center) {
                     Text(entry.title.take(1).uppercase(), color = Lime, fontSize = 35.sp, fontWeight = FontWeight.Black)
                 }
@@ -1766,7 +1767,8 @@ private fun SeriesScreen(
 ) {
     Row(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
         Column(Modifier.weight(1f).fillMaxHeight()) {
-            Text("SERIES", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Text("SERIES  •  SEASONS & EPISODES", color = Lime, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+            if (message.isNotBlank()) Text(message, color = ErrorRed, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(14.dp))
             val filtered = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) }
             val seriesListState = rememberLazyListState()
@@ -1785,7 +1787,7 @@ private fun SeriesScreen(
                         modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }.focusable().clickable { onSelect(entry) },
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(10.dp)) {
-                            AsyncImage(entry.logoUrl, contentDescription = null, modifier = Modifier.size(58.dp, 76.dp))
+                            AsyncImage(model = entry.logoUrl, contentDescription = null, modifier = Modifier.size(58.dp, 76.dp), contentScale = ContentScale.Crop)
                             Column(Modifier.padding(start = 12.dp)) {
                                 Text(entry.title, color = TextMain, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                 Text(entry.category, color = TextMuted, fontSize = 11.sp)
@@ -2087,7 +2089,7 @@ private fun PlaybackDialog(
                     PlayerView(viewContext).apply {
                         this.player = player
                         useController = true
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                         keepScreenOn = true
                     }
                 },
