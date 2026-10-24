@@ -803,6 +803,11 @@ private fun SettingsScreen(
     var confirmClearHistory by remember { mutableStateOf(false) }
     var premiumCodeInput by remember(premiumCode) { mutableStateOf(premiumCode) }
     var premiumCodeSaved by remember { mutableStateOf(false) }
+    var kidsEnabled by remember { mutableStateOf(preferences.kidsModeEnabled()) }
+    var showKidsPinDialog by remember { mutableStateOf(false) }
+    var kidsPinInput by remember { mutableStateOf("") }
+    var kidsPinError by remember { mutableStateOf("") }
+    var kidsPinSaved by remember { mutableStateOf(false) }
 
     fun loadAbout() {
         loadingAbout = true
@@ -861,6 +866,76 @@ private fun SettingsScreen(
                         Text("History is stored on this device.", color = TextMuted, fontSize = 11.sp)
                     }
                     OutlinedButton(onClick = { confirmClearHistory = true }) { Text("Clear history") }
+                }
+            }
+        }
+        Surface(color = Panel, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("KIDS MODE", color = GoldLight, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Parental PIN protection", color = TextMain, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (preferences.hasKidsPin()) "A local PIN is configured. Content filtering still needs to be completed."
+                            else "Set a 4–8 digit PIN before enabling Kids Mode.",
+                            color = TextMuted, fontSize = 11.sp,
+                        )
+                    }
+                    Switch(checked = kidsEnabled, onCheckedChange = { enabled ->
+                        if (enabled && !preferences.hasKidsPin()) {
+                            kidsPinInput = ""
+                            kidsPinError = ""
+                            showKidsPinDialog = true
+                        } else {
+                            kidsEnabled = preferences.setKidsModeEnabled(enabled)
+                        }
+                    })
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        kidsPinInput = ""
+                        kidsPinError = ""
+                        kidsPinSaved = false
+                        showKidsPinDialog = true
+                    }) { Text(if (preferences.hasKidsPin()) "Set / change PIN" else "Create PIN") }
+                    if (kidsPinSaved) Text("PIN saved", color = GoldLight, fontSize = 11.sp)
+                }
+                if (showKidsPinDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showKidsPinDialog = false; kidsPinInput = ""; kidsPinError = "" },
+                        title = { Text(if (preferences.hasKidsPin()) "Set a new Kids Mode PIN" else "Create Kids Mode PIN") },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    value = kidsPinInput,
+                                    onValueChange = { value ->
+                                        if (value.length <= 8 && value.all(Char::isDigit)) kidsPinInput = value
+                                        kidsPinError = ""
+                                    },
+                                    label = { Text("4–8 digit PIN") },
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                                )
+                                if (kidsPinError.isNotBlank()) Text(kidsPinError, color = Color(0xFFFF7777), fontSize = 12.sp)
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                val saved = preferences.setKidsPin(kidsPinInput)
+                                if (saved) {
+                                    kidsEnabled = true
+                                    kidsPinSaved = true
+                                    showKidsPinDialog = false
+                                    kidsPinInput = ""
+                                    kidsPinError = ""
+                                } else kidsPinError = "Enter 4 to 8 digits."
+                            }) { Text("Save PIN") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showKidsPinDialog = false; kidsPinInput = ""; kidsPinError = "" }) { Text("Cancel") }
+                        },
+                    )
                 }
             }
         }
