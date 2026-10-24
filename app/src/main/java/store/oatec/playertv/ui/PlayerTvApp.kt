@@ -233,9 +233,9 @@ fun PlayerTvApp() {
                         .onSuccess { (result, firstPage, totalCount) ->
                             if (source.id == activeSourceId) {
                                 catalog = when (catalogSection) {
-                                    CatalogSection.LIVE -> catalog.copy(liveChannels = firstPage)
-                                    CatalogSection.MOVIES -> catalog.copy(movies = firstPage)
-                                    CatalogSection.SERIES -> catalog.copy(series = firstPage)
+                                    CatalogSection.LIVE -> catalog.copy(liveChannels = applyKidsModeFilter(firstPage, preferences))
+                                    CatalogSection.MOVIES -> catalog.copy(movies = applyKidsModeFilter(firstPage, preferences))
+                                    CatalogSection.SERIES -> catalog.copy(series = applyKidsModeFilter(firstPage, preferences))
                                 }
                                 if (catalogSection == CatalogSection.LIVE) selectedCategory = "All"
                                 loadedCatalogs = loadedCatalogs + loadKey
@@ -276,9 +276,9 @@ fun PlayerTvApp() {
                 }
                 if (source.id == activeSourceId && requestedSearch == search && page.isNotEmpty()) {
                     catalog = when (catalogSection) {
-                        CatalogSection.LIVE -> catalog.copy(liveChannels = catalog.liveChannels + page)
-                        CatalogSection.MOVIES -> catalog.copy(movies = catalog.movies + page)
-                        CatalogSection.SERIES -> catalog.copy(series = catalog.series + page)
+                        CatalogSection.LIVE -> catalog.copy(liveChannels = applyKidsModeFilter(catalog.liveChannels + page, preferences))
+                        CatalogSection.MOVIES -> catalog.copy(movies = applyKidsModeFilter(catalog.movies + page, preferences))
+                        CatalogSection.SERIES -> catalog.copy(series = applyKidsModeFilter(catalog.series + page, preferences))
                     }
                 }
             } catch (error: Exception) {
@@ -318,9 +318,9 @@ fun PlayerTvApp() {
         }
         if (source.id != activeSourceId || requestedSearch != search || currentSection.name != section) return@LaunchedEffect
         catalog = when (catalogSection) {
-            CatalogSection.LIVE -> catalog.copy(liveChannels = filteredPage)
-            CatalogSection.MOVIES -> catalog.copy(movies = filteredPage)
-            CatalogSection.SERIES -> catalog.copy(series = filteredPage)
+            CatalogSection.LIVE -> catalog.copy(liveChannels = applyKidsModeFilter(filteredPage, preferences))
+            CatalogSection.MOVIES -> catalog.copy(movies = applyKidsModeFilter(filteredPage, preferences))
+            CatalogSection.SERIES -> catalog.copy(series = applyKidsModeFilter(filteredPage, preferences))
         }
     }
 
@@ -2473,6 +2473,17 @@ private fun visibleChannels(
         else -> !hidden && preferences.categoryFor(channel.id, channel.category) == category
     }) &&
         (search.isBlank() || channel.title.contains(search, true) || channel.category.contains(search, true))
+}
+
+/** Applies the device-local Kids Mode gate to every loaded catalogue page. */
+private fun applyKidsModeFilter(entries: List<MediaEntry>, preferences: PlayerPreferences): List<MediaEntry> {
+    if (!preferences.kidsModeEnabled()) return entries
+    val childSafeTerms = listOf("kids", "children", "cartoon", "animation", "family", "educational", "education", "junior", "طفل", "أطفال", "كرتون", "عائلي")
+    return entries.filter { entry ->
+        val searchable = (entry.title + " " + entry.category).lowercase()
+        val classifiedSafe = childSafeTerms.any { it in searchable }
+        preferences.isAllowedInKidsMode(entry.id, classifiedSafe)
+    }
 }
 
 private fun numberedChannels(channels: List<MediaEntry>, preferences: PlayerPreferences): List<Pair<MediaEntry, Int>> =
