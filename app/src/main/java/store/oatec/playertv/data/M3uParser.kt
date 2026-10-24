@@ -88,7 +88,7 @@ object M3uParser {
                     val attributeText = if (comma >= 0) info.substring(0, comma) else info
                     title = if (comma >= 0) info.substring(comma + 1).trim() else ""
                     metadata = attributePattern.findAll(attributeText).associate {
-                        it.groupValues[1].lowercase() to it.groupValues[2].trim('\"', '\'')
+                        it.groupValues[1].lowercase() to it.groupValues[2].trim('"', '\'')
                     }
                     group = metadata["group-title"].orEmpty()
                 }
