@@ -26,6 +26,7 @@ data class PlayerSource(
     val serverUrl: String,
     val username: String = "",
     val password: String = "",
+    val epgUrl: String = "",
 )
 
 data class MediaEntry(
