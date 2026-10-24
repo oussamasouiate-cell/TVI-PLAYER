@@ -34,6 +34,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -85,6 +86,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -136,7 +138,7 @@ private data class VlcPlaybackSession(
 private data class VlcAudioTrack(val id: Int, val name: String)
 
 private enum class Section(val label: String) {
-    LIVE("Live TV"), MOVIES("Movies"), SERIES("Series"), SOURCES("Sources"), SETTINGS("Settings"),
+    HOME("Home"), LIVE("Live TV"), MOVIES("Movies"), SERIES("Series"), SOURCES("Sources"), SETTINGS("Settings"),
 }
 
 @Composable
@@ -160,7 +162,8 @@ fun PlayerTvApp() {
     val activeSource = sources.firstOrNull { it.id == activeSourceId }
     var catalog by remember { mutableStateOf(SourceCatalog()) }
         var loadedCatalogs by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var section by rememberSaveable { mutableStateOf(Section.LIVE.name) }
+    // Always open the home dashboard on a fresh app launch; do not restore a stale section like SERIES.
+    var section by remember { mutableStateOf(Section.HOME.name) }
     var selectedCategory by rememberSaveable { mutableStateOf("All") }
     var search by rememberSaveable { mutableStateOf("") }
     var selectedMedia by remember { mutableStateOf<MediaEntry?>(null) }
@@ -168,8 +171,10 @@ fun PlayerTvApp() {
     var organizingChannel by remember { mutableStateOf<MediaEntry?>(null) }
     var pendingSeries by remember { mutableStateOf<MediaEntry?>(null) }
     var episodes by remember { mutableStateOf<List<MediaEntry>>(emptyList()) }
+    var episodesBusy by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var activeLoadCount by remember { mutableStateOf(0) }
+    var loadingMore by remember { mutableStateOf(false) }
     var preferenceRevision by remember { mutableStateOf(0) }
     var message by remember { mutableStateOf("") }
     var showAddSource by remember { mutableStateOf(false) }
@@ -177,7 +182,7 @@ fun PlayerTvApp() {
     var numberInput by rememberSaveable { mutableStateOf("") }
     var selectedChannelId by rememberSaveable { mutableStateOf("") }
     val scope = rememberCoroutineScope()
-    val currentSection = Section.entries.firstOrNull { it.name == section } ?: Section.LIVE
+    val currentSection = Section.entries.firstOrNull { it.name == section } ?: Section.HOME
 
     fun refresh(source: PlayerSource, requestedSection: Section = currentSection, force: Boolean = false) {
         val catalogSection = when (requestedSection) {
@@ -213,25 +218,28 @@ fun PlayerTvApp() {
                         withContext(Dispatchers.IO) {
                             // Stream bounded batches directly into one SQLite transaction.
                             // A failed response rolls back, preserving the last good catalogue.
-                            mediaCatalogStore.beginImport(source.id, catalogSection.name).use { session ->
-                                val result = repository.loadCatalogBatched(source, catalogSection) { batch ->
+                            val result = mediaCatalogStore.beginImport(source.id, catalogSection.name).use { session ->
+                                val loaded = repository.loadCatalogBatched(source, catalogSection) { batch ->
                                     session.insertBatch(batch)
                                 }
                                 session.commit()
-                                result
+                                loaded
                             }
+                            val firstPage = mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = 0)
+                            val totalCount = mediaCatalogStore.count(source.id, catalogSection.name)
+                            Triple(result, firstPage, totalCount)
                         }
                     }
-                        .onSuccess { result ->
+                        .onSuccess { (result, firstPage, totalCount) ->
                             if (source.id == activeSourceId) {
                                 catalog = when (catalogSection) {
-                                    CatalogSection.LIVE -> catalog.copy(liveChannels = result.liveChannels)
-                                    CatalogSection.MOVIES -> catalog.copy(movies = result.movies)
-                                    CatalogSection.SERIES -> catalog.copy(series = result.series)
+                                    CatalogSection.LIVE -> catalog.copy(liveChannels = firstPage)
+                                    CatalogSection.MOVIES -> catalog.copy(movies = firstPage)
+                                    CatalogSection.SERIES -> catalog.copy(series = firstPage)
                                 }
                                 if (catalogSection == CatalogSection.LIVE) selectedCategory = "All"
                                 loadedCatalogs = loadedCatalogs + loadKey
-                                message = "${result.liveChannels.size} live channels | ${result.movies.size} movies | ${result.series.size} series"
+                                message = "$totalCount ${catalogSection.name.lowercase()} items saved; showing pages of up to 500."
                             }
                         }
                         .onFailure { if (source.id == activeSourceId) message = it.message ?: "Could not load this source." }
@@ -243,16 +251,77 @@ fun PlayerTvApp() {
         }
     }
 
+    fun loadMore(requestedSection: Section) {
+        val source = sources.firstOrNull { it.id == activeSourceId } ?: return
+        val catalogSection = when (requestedSection) {
+            Section.LIVE -> CatalogSection.LIVE
+            Section.MOVIES -> CatalogSection.MOVIES
+            Section.SERIES -> CatalogSection.SERIES
+            else -> return
+        }
+        if (loadingMore) return
+        val currentSize = when (catalogSection) {
+            CatalogSection.LIVE -> catalog.liveChannels.size
+            CatalogSection.MOVIES -> catalog.movies.size
+            CatalogSection.SERIES -> catalog.series.size
+        }
+        val requestedSearch = search
+        loadingMore = true
+        scope.launch {
+            try {
+                val page = withContext(Dispatchers.IO) {
+                    val total = mediaCatalogStore.count(source.id, catalogSection.name, search = requestedSearch)
+                    if (currentSize.toLong() >= total) emptyList()
+                    else mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = currentSize, search = requestedSearch)
+                }
+                if (source.id == activeSourceId && requestedSearch == search && page.isNotEmpty()) {
+                    catalog = when (catalogSection) {
+                        CatalogSection.LIVE -> catalog.copy(liveChannels = catalog.liveChannels + page)
+                        CatalogSection.MOVIES -> catalog.copy(movies = catalog.movies + page)
+                        CatalogSection.SERIES -> catalog.copy(series = catalog.series + page)
+                    }
+                }
+            } catch (error: Exception) {
+                if (source.id == activeSourceId) message = error.message ?: "Could not load the next catalogue page."
+            } finally {
+                loadingMore = false
+            }
+        }
+    }
+
     LaunchedEffect(activeSourceId) {
         catalog = SourceCatalog()
         loadedCatalogs = emptySet()
         episodes = emptyList()
+        episodesBusy = false
         pendingSeries = null
     }
 
     LaunchedEffect(activeSourceId, section) {
         val source = sources.firstOrNull { it.id == activeSourceId } ?: return@LaunchedEffect
         refresh(source)
+    }
+
+    LaunchedEffect(activeSourceId, section, search, loadedCatalogs) {
+        val source = sources.firstOrNull { it.id == activeSourceId } ?: return@LaunchedEffect
+        val catalogSection = when (currentSection) {
+            Section.LIVE -> CatalogSection.LIVE
+            Section.MOVIES -> CatalogSection.MOVIES
+            Section.SERIES -> CatalogSection.SERIES
+            else -> return@LaunchedEffect
+        }
+        val loadKey = "${source.id}:${catalogSection.name}"
+        if (loadKey !in loadedCatalogs) return@LaunchedEffect
+        val requestedSearch = search
+        val filteredPage = withContext(Dispatchers.IO) {
+            mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = 0, search = requestedSearch)
+        }
+        if (source.id != activeSourceId || requestedSearch != search || currentSection.name != section) return@LaunchedEffect
+        catalog = when (catalogSection) {
+            CatalogSection.LIVE -> catalog.copy(liveChannels = filteredPage)
+            CatalogSection.MOVIES -> catalog.copy(movies = filteredPage)
+            CatalogSection.SERIES -> catalog.copy(series = filteredPage)
+        }
     }
 
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -265,7 +334,7 @@ fun PlayerTvApp() {
                     sources += source
                     sourceStore.save(sources)
                     activeSourceId = source.id
-                    section = Section.LIVE.name
+                    section = Section.HOME.name
                     message = "Playlist imported"
                 }.onFailure { message = it.message ?: "Could not import playlist." }
                 busy = false
@@ -302,7 +371,7 @@ fun PlayerTvApp() {
                     sources += source
                     sourceStore.save(sources)
                     activeSourceId = source.id
-                    section = Section.LIVE.name
+                    section = Section.HOME.name
                 },
             )
         } else {
@@ -330,6 +399,9 @@ fun PlayerTvApp() {
                     val key = event.nativeKeyEvent
                     if (key.action != AndroidKeyEvent.ACTION_DOWN) return@onPreviewKeyEvent false
                     when (key.keyCode) {
+                        AndroidKeyEvent.KEYCODE_BACK -> {
+                            if (currentSection != Section.HOME) { section = Section.HOME.name; true } else false
+                        }
                         AndroidKeyEvent.KEYCODE_CHANNEL_UP -> {
                             if (currentSection == Section.LIVE && catalog.liveChannels.isNotEmpty()) {
                                 val channels = visibleChannels(catalog, selectedCategory, search, preferences)
@@ -379,12 +451,21 @@ fun PlayerTvApp() {
                     }
                 },
         ) {
+            if (currentSection == Section.HOME) {
+                HomeDashboard(
+                    compact = compactLandscape,
+                    sourceName = activeSource?.name,
+                    onSelect = { section = it.name; selectedCategory = "All"; search = "" },
+                    onExit = { (context as? Activity)?.finishAndRemoveTask() },
+                )
+            } else {
             Column(Modifier.fillMaxSize()) {
                 NavigationRail(
-                    selected = currentSection,
+                    selected = if (currentSection == Section.SOURCES) Section.SETTINGS else currentSection,
                     sourceName = activeSource?.name,
                     compact = compactLandscape,
                     onSelect = { section = it.name; selectedCategory = "All"; search = "" },
+                    onHome = { section = Section.HOME.name; selectedCategory = "All"; search = "" },
                     onExit = { (context as? Activity)?.finishAndRemoveTask() },
                 )
                 Column(Modifier.weight(1f).fillMaxWidth()) {
@@ -403,6 +484,7 @@ fun PlayerTvApp() {
                     )
                     HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
                     when (currentSection) {
+                        Section.HOME -> Unit // HomeDashboard is rendered above this content switch.
                         Section.LIVE -> LiveScreen(
                             catalog = catalog,
                             category = selectedCategory,
@@ -412,6 +494,7 @@ fun PlayerTvApp() {
                             message = message,
                             busy = busy,
                             onCategory = { selectedCategory = it },
+                            onLoadMore = { loadMore(Section.LIVE) },
                             onPlay = {
                                 selectedChannelId = it.id
                                 selectedMedia = it.copy(title = preferences.channelTitle(it.id, it.title))
@@ -428,7 +511,8 @@ fun PlayerTvApp() {
                             message = message,
                             preferences = preferences,
                             recentEntries = preferences.recentlyWatched(catalog.movies + episodes),
-                            onPlay = { selectedDetails = it },
+                            onLoadMore = { loadMore(Section.MOVIES) },
+                            onPlay = { selectedMedia = it },
                             onFavorite = { item -> preferences.setFavorite(item.id, item.id !in preferences.favorites()); preferenceRevision++ },
                         )
                         Section.SERIES -> SeriesScreen(
@@ -436,17 +520,18 @@ fun PlayerTvApp() {
                             episodes = episodes,
                             selectedSeries = pendingSeries,
                             search = search,
-                            busy = busy,
+                            busy = episodesBusy,
                             message = message,
                             preferences = preferences,
+                            onLoadMore = { loadMore(Section.SERIES) },
                             onSelect = { series ->
-                                selectedDetails = series
                                 val source = activeSource
                                 if (source == null || source.type != SourceType.XTREAM) {
                                     message = "Series episodes require an Xtream source."
                                 } else {
                                     pendingSeries = series
-                                    busy = true
+                                    episodes = emptyList()
+                                    episodesBusy = true
                                     scope.launch {
                                         runCatching {
                                             withContext(Dispatchers.IO) {
@@ -454,7 +539,7 @@ fun PlayerTvApp() {
                                             }
                                         }.onSuccess { episodes = it }
                                             .onFailure { message = it.message ?: "Could not load episodes." }
-                                        busy = false
+                                        episodesBusy = false
                                     }
                                 }
                             },
@@ -478,6 +563,7 @@ fun PlayerTvApp() {
                         Section.SETTINGS -> SettingsScreen(
                             preferences = preferences,
                             aboutRepository = aboutRepository,
+                            onManageSources = { section = Section.SOURCES.name },
                             premiumCode = premiumCode,
                             onSavePremiumCode = { code ->
                                 sourceStore.savePremiumCode(code)
@@ -487,6 +573,7 @@ fun PlayerTvApp() {
                         )
                     }
                 }
+            }
             }
             if (showAddSource) {
                 AddSourceDialog(
@@ -702,6 +789,7 @@ private fun InitialSetupScreen(
 private fun SettingsScreen(
     preferences: PlayerPreferences,
     aboutRepository: OatecAboutRepository,
+    onManageSources: () -> Unit,
     premiumCode: String,
     onSavePremiumCode: (String) -> Unit,
     onExit: () -> Unit,
@@ -736,6 +824,19 @@ private fun SettingsScreen(
         Column {
             Text("Settings", color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Text("Playback preferences and OATEC information", color = TextMuted, fontSize = 12.sp)
+        }
+        Surface(color = Panel, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+            Row(
+                Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Sources & playlists", color = TextMain, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Manage existing providers or import a playlist.", color = TextMuted, fontSize = 11.sp)
+                }
+                OutlinedButton(onClick = onManageSources) { Text("Manage sources") }
+            }
         }
         Surface(color = Panel, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -830,74 +931,279 @@ private fun SettingsScreen(
 }
 
 @Composable
+private fun HomeDashboard(
+    compact: Boolean,
+    sourceName: String?,
+    onSelect: (Section) -> Unit,
+    onExit: () -> Unit,
+) {
+    var selectedHomeCard by remember { mutableStateOf(Section.LIVE) }
+    Box(
+        Modifier.fillMaxSize()
+            .background(Ink)
+            .drawBehind {
+                drawRect(
+                    Brush.radialGradient(
+                        colors = listOf(Color(0x665A350A), Color(0x1AE8B83E), Color.Transparent),
+                        center = Offset(size.width * 0.52f, size.height * 0.08f),
+                        radius = size.maxDimension * 0.88f,
+                    ),
+                )
+                drawRect(
+                    Brush.radialGradient(
+                        colors = listOf(Color(0x44331D08), Color.Transparent),
+                        center = Offset(size.width * 0.08f, size.height * 0.92f),
+                        radius = size.maxDimension * 0.62f,
+                    ),
+                )
+            },
+    ) {
+        Column(
+            Modifier.fillMaxSize().padding(horizontal = if (compact) 16.dp else 34.dp, vertical = if (compact) 12.dp else 22.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 18.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth().height(if (compact) 62.dp else 104.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 18.dp),
+            ) {
+                Surface(
+                    color = Color(0xFF090B0E),
+                    shape = RoundedCornerShape(if (compact) 12.dp else 18.dp),
+                    border = BorderStroke(2.dp, Brush.linearGradient(listOf(GoldLight, Lime, Color(0xFF8B5812)))),
+                    modifier = Modifier.size(if (compact) 48.dp else 76.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                            Text("▶", color = Lime, fontSize = if (compact) 16.sp else 25.sp, fontWeight = FontWeight.Black)
+                            Text("TVI", color = GoldLight, fontSize = if (compact) 9.sp else 13.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+                Column(Modifier.weight(1.1f), verticalArrangement = Arrangement.Center) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("TVI", color = Lime, fontSize = if (compact) 20.sp else 34.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                        Text("PLAYER", color = TextMain, fontSize = if (compact) 20.sp else 34.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                    }
+                    Text("Your entertainment, your way", color = TextMuted, fontSize = if (compact) 9.sp else 15.sp, maxLines = 1)
+                }
+                Column(
+                    Modifier.weight(1f).padding(horizontal = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("🛒", color = Lime, fontSize = if (compact) 17.sp else 27.sp)
+                        Text("OATEC", color = GoldLight, fontSize = if (compact) 17.sp else 30.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                        Text("STORE", color = TextMain.copy(alpha = 0.86f), fontSize = if (compact) 11.sp else 18.sp, fontWeight = FontWeight.Light, maxLines = 1)
+                    }
+                    Text("VOTRE BOUTIQUE EN LIGNE", color = Lime.copy(alpha = 0.8f), fontSize = if (compact) 7.sp else 10.sp, letterSpacing = if (compact) 1.sp else 2.sp, maxLines = 1)
+                }
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("◉  WIFI", color = TextMain.copy(alpha = 0.8f), fontSize = if (compact) 9.sp else 13.sp)
+                    OutlinedButton(
+                        onClick = { onSelect(Section.SETTINGS) },
+                        contentPadding = PaddingValues(horizontal = if (compact) 8.dp else 13.dp, vertical = 2.dp),
+                    ) { Text("⚙  ${if (compact) "Settings" else "SETTINGS"}", color = GoldLight, fontSize = if (compact) 9.sp else 12.sp) }
+                }
+            }
+
+            Row(
+                Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val cards = listOf(
+                    HomeCardData(Section.LIVE, "TV LIVE", "Chaînes en direct", "▣", "LIVE TV", listOf(Color(0xFF193348), Color(0xFF07121C))),
+                    HomeCardData(Section.MOVIES, "FILM", "Films à la demande", "▰", "CINÉMA", listOf(Color(0xFF4A351D), Color(0xFF100D0A))),
+                    HomeCardData(Section.SERIES, "SIRRIES", "Séries & épisodes", "▤", "SIRRIES", listOf(Color(0xFF263746), Color(0xFF0A0D12))),
+                    HomeCardData(Section.SETTINGS, "SITTING", "Préférences & sources", "⚙", "OATEC", listOf(Color(0xFF3C2B13), Color(0xFF080A0D))),
+                )
+                cards.forEachIndexed { index, card ->
+                    val active = card.section == selectedHomeCard
+                    Surface(
+                        color = Color(0xCC05080C),
+                        shape = RoundedCornerShape(if (compact) 12.dp else 20.dp),
+                        border = BorderStroke(
+                            if (active) 2.dp else 1.dp,
+                            if (active) Brush.linearGradient(listOf(GoldLight, Lime, Color(0xFFB87816)))
+                            else Brush.linearGradient(listOf(Color(0xFF41434A), Color(0xFF20242B))),
+                        ),
+                        modifier = Modifier.weight(1f).fillMaxHeight()
+                            .onFocusChanged { if (it.isFocused) selectedHomeCard = card.section }
+                            .focusable()
+                            .clickable {
+                                selectedHomeCard = card.section
+                                onSelect(card.section)
+                            }
+                            .drawBehind {
+                                if (active) {
+                                    drawRect(
+                                        Brush.radialGradient(
+                                            colors = listOf(Color(0x44E8B83E), Color.Transparent),
+                                            center = Offset(size.width * 0.5f, size.height * 0.28f),
+                                            radius = size.maxDimension * 0.65f,
+                                        ),
+                                    )
+                                }
+                            },
+                    ) {
+                        Column(
+                            Modifier.fillMaxSize().padding(horizontal = if (compact) 7.dp else 14.dp, vertical = if (compact) 8.dp else 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Box(
+                                Modifier.fillMaxWidth().weight(1f)
+                                    .background(Brush.verticalGradient(card.artColors), RoundedCornerShape(if (compact) 8.dp else 14.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    card.artLabel,
+                                    color = TextMain.copy(alpha = 0.10f),
+                                    fontSize = if (compact) 26.sp else 48.sp,
+                                    fontWeight = FontWeight.Black,
+                                    maxLines = 1,
+                                )
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    Text(card.symbol, color = Lime, fontSize = if (compact) 37.sp else 62.sp, fontWeight = FontWeight.Bold)
+                                    Box(Modifier.width(if (compact) 35.dp else 54.dp).height(3.dp).background(Brush.horizontalGradient(listOf(Color.Transparent, Lime, GoldLight, Color.Transparent))))
+                                }
+                            }
+                            Spacer(Modifier.height(if (compact) 6.dp else 12.dp))
+                            Text(card.title, color = if (active) GoldLight else TextMain, fontSize = if (compact) 12.sp else 23.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                            Text(card.subtitle, color = TextMuted, fontSize = if (compact) 8.sp else 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Row(Modifier.fillMaxWidth().padding(top = if (compact) 4.dp else 10.dp), horizontalArrangement = Arrangement.End) {
+                                Text("›", color = if (active) Lime else TextMuted, fontSize = if (compact) 23.sp else 31.sp, fontWeight = FontWeight.Light)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Row(
+                Modifier.fillMaxWidth().height(if (compact) 28.dp else 42.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.width(if (compact) 22.dp else 34.dp).height(2.dp).background(Lime))
+                    Text("OATEC", color = Lime, fontSize = if (compact) 9.sp else 13.sp, letterSpacing = 3.sp, fontWeight = FontWeight.Bold)
+                    Text("STORE", color = TextMain, fontSize = if (compact) 9.sp else 13.sp, letterSpacing = 3.sp)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 22.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("♢  Service fiable", color = TextMuted, fontSize = if (compact) 8.sp else 11.sp, maxLines = 1)
+                    Text("ϟ  Accès rapide", color = TextMuted, fontSize = if (compact) 8.sp else 11.sp, maxLines = 1)
+                    Text("◉  Support 24/7", color = TextMuted, fontSize = if (compact) 8.sp else 11.sp, maxLines = 1)
+                }
+                Text("Votre satisfaction est notre priorité", color = GoldLight, fontSize = if (compact) 8.sp else 13.sp, maxLines = 1)
+            }
+        }
+    }
+}
+
+private data class HomeCardData(
+    val section: Section,
+    val title: String,
+    val subtitle: String,
+    val symbol: String,
+    val artLabel: String,
+    val artColors: List<Color>,
+)
+
+@Composable
 private fun NavigationRail(
     selected: Section,
     sourceName: String?,
     compact: Boolean,
     onSelect: (Section) -> Unit,
+    onHome: () -> Unit,
     onExit: () -> Unit,
 ) {
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth()
             .background(Brush.horizontalGradient(listOf(Color(0xFF171D28), Color(0xFF0B0E14))))
-            .padding(horizontal = if (compact) 8.dp else 18.dp, vertical = if (compact) 6.dp else 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 12.dp),
+            .padding(horizontal = if (compact) 8.dp else 22.dp, vertical = if (compact) 7.dp else 12.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp),
     ) {
-        Surface(
-            color = Color(0xFF0D1117),
-            shape = RoundedCornerShape(10.dp),
-            border = BorderStroke(2.dp, Brush.linearGradient(listOf(Lime, GoldLight))),
-            modifier = Modifier.size(if (compact) 34.dp else 42.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text("IPTV", color = Lime, fontSize = if (compact) 8.sp else 10.sp, fontWeight = FontWeight.Black)
+            Surface(
+                color = Color(0xFF0D1117),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(2.dp, Brush.linearGradient(listOf(Lime, GoldLight))),
+                modifier = Modifier.size(if (compact) 32.dp else 40.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("TVI", color = Lime, fontSize = if (compact) 8.sp else 10.sp, fontWeight = FontWeight.Black)
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text("TVI PLAYER", color = TextMain, fontSize = if (compact) 12.sp else 15.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                if (!sourceName.isNullOrBlank()) Text(sourceName, color = TextMuted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp)) {
+                Text("⌂ Home", fontSize = 10.sp)
+            }
+            OutlinedButton(onClick = onExit, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp)) {
+                Text("Exit", fontSize = 10.sp)
             }
         }
-        Column(modifier = Modifier.widthIn(min = 58.dp, max = if (compact) 72.dp else 100.dp)) {
-            Text("OATEC", color = TextMain, fontSize = if (compact) 11.sp else 15.sp, fontWeight = FontWeight.Black, maxLines = 1)
-            if (!compact) Text("PLAYER TV", color = TextMuted, fontSize = 8.sp, letterSpacing = 1.sp, maxLines = 1)
-        }
         Row(
-            modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 8.dp),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 7.dp else 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            itemsInNavigation@ for (item in Section.entries) {
+            val mainItems = listOf(Section.LIVE, Section.MOVIES, Section.SERIES, Section.SETTINGS)
+            mainItems.forEach { item ->
                 val active = selected == item
                 Surface(
-                    color = if (active) Color(0xFF242D38) else Color.Transparent,
-                    shape = RoundedCornerShape(10.dp),
-                    border = if (active) BorderStroke(1.dp, Brush.horizontalGradient(listOf(Lime.copy(alpha = 0.9f), GoldLight.copy(alpha = 0.35f)))) else null,
-                    modifier = Modifier.weight(1f).focusable().clickable { onSelect(item) },
+                    color = if (active) Color(0xFF242D38) else Color(0xFF111722),
+                    shape = RoundedCornerShape(if (compact) 10.dp else 14.dp),
+                    border = BorderStroke(
+                        if (active) 2.dp else 1.dp,
+                        if (active) Brush.horizontalGradient(listOf(Lime, GoldLight)) else Brush.horizontalGradient(listOf(Color(0xFF303743), Color(0xFF242B35))),
+                    ),
+                    modifier = Modifier.weight(1f).height(if (compact) 58.dp else 76.dp)
+                        .focusable()
+                        .clickable { onSelect(item) },
                 ) {
-                    Box(
-                        modifier = Modifier.padding(horizontal = if (compact) 4.dp else 10.dp, vertical = if (compact) 9.dp else 12.dp),
-                        contentAlignment = Alignment.Center,
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = if (compact) 5.dp else 8.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
+                        Text(
+                            when (item) {
+                                Section.LIVE -> "▣"
+                                Section.MOVIES -> "▶"
+                                Section.SERIES -> "▤"
+                                else -> "⚙"
+                            },
+                            color = if (active) Lime else TextMuted,
+                            fontSize = if (compact) 16.sp else 20.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(Modifier.height(3.dp))
                         Text(
                             when (item) {
                                 Section.LIVE -> "TV LIVE"
                                 Section.MOVIES -> "FILM"
                                 Section.SERIES -> "SERIES"
-                                Section.SOURCES -> "SOURCES"
-                                Section.SETTINGS -> "SETTINGS"
+                                else -> "SETTING"
                             },
                             color = if (active) Lime else TextMain,
-                            fontSize = if (compact) 10.sp else 13.sp,
-                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                            fontSize = if (compact) 9.sp else 12.sp,
+                            fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
             }
-        }
-        if (!compact && sourceName != null) {
-            Text(sourceName, color = TextMuted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 110.dp))
-        }
-        OutlinedButton(onClick = onExit, contentPadding = PaddingValues(horizontal = if (compact) 8.dp else 12.dp, vertical = 4.dp)) {
-            Text("Exit", fontSize = if (compact) 10.sp else 12.sp)
         }
     }
 }
@@ -970,122 +1276,79 @@ private fun LiveScreen(
     message: String,
     busy: Boolean,
     onCategory: (String) -> Unit,
+    onLoadMore: () -> Unit,
     onPlay: (MediaEntry) -> Unit,
     onFavorite: (MediaEntry) -> Unit,
     onOrganize: (MediaEntry) -> Unit,
     onHide: (MediaEntry) -> Unit,
 ) {
+    // Receiver-style channel list: no promotional hero, fake preview panel, or
+    // intermediate "choose a channel" screen. Selecting a channel plays it.
     val channels = remember(catalog.liveChannels, category, search, preferenceRevision) {
         visibleChannels(catalog, category, search, preferences)
     }
-    val categories = listOf("All", "Favorites", "Hidden") +
-        catalog.liveChannels.map { preferences.categoryFor(it.id, it.category) }.distinct().sorted() +
-        preferences.customCategories()
-    val distinctCategories = categories.distinct()
-    Column(Modifier.fillMaxSize().padding(horizontal = 28.dp)) {
-        Row(
-            Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("YOUR ENTERTAINMENT", color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-                Text("Live channels, ready when you are", color = TextMuted, fontSize = 11.sp)
-            }
-            Surface(
-                color = Color(0x1F43D19E),
-                shape = RoundedCornerShape(50),
-                border = BorderStroke(1.dp, Color(0x6643D19E)),
+    val channelListState = rememberLazyListState()
+    val lastChannelVisible = channelListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+    LaunchedEffect(lastChannelVisible, channels.size) {
+        if (channels.isNotEmpty() && lastChannelVisible >= channels.size - 10) onLoadMore()
+    }
+    val categories = remember(catalog.liveChannels, preferenceRevision) {
+        (listOf("All", "Favorites", "Hidden") +
+            catalog.liveChannels.map { preferences.categoryFor(it.id, it.category) }.distinct().sorted() +
+            preferences.customCategories()).distinct()
+    }
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 8.dp)) {
+        if (categories.isNotEmpty()) {
+            LazyRow(
+                Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Row(
-                    Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Box(Modifier.size(6.dp).background(Color(0xFF43D19E), CircleShape))
-                    Text("LIVE TV", color = Color(0xFF7AE6B7), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                items(categories, key = { it }) { item ->
+                    CategoryPill(item, category == item) { onCategory(item) }
                 }
             }
         }
-        LazyRow(
-            Modifier.fillMaxWidth().padding(vertical = 15.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            items(distinctCategories, key = { it }) { item ->
-                CategoryPill(item, category == item) { onCategory(item) }
-            }
+            Text("CH", color = GoldLight, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(54.dp))
+            Text("CHANNEL", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text("CATEGORY", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(150.dp))
+            Text("ACTIONS", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
-        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-            Column(Modifier.weight(1.2f).fillMaxHeight()) {
-                Text("CHANNEL LINEUP", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
-                Spacer(Modifier.height(8.dp))
-                when {
-                    busy && catalog.liveChannels.isEmpty() -> LoadingState("Loading channels")
-                    channels.isEmpty() -> EmptyState("No channels here", message.ifBlank { "Add or refresh a source to load live TV." })
-                    else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(5.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
-                        itemsIndexed(channels, key = { _, item -> item.id }) { _, item ->
-                            ChannelRow(
-                                number = channelNumber(item, catalog.liveChannels, preferences),
-                                entry = item.copy(title = preferences.channelTitle(item.id, item.title)),
-                                favorite = item.id in preferences.favorites(),
-                                hidden = item.id in preferences.hiddenChannels(),
-                                category = preferences.categoryFor(item.id, item.category),
-                                onPlay = { onPlay(item.copy(title = preferences.channelTitle(item.id, item.title))) },
-                                onFavorite = { onFavorite(item) },
-                                onOrganize = { onOrganize(item) },
-                                onHide = { onHide(item) },
-                            )
-                        }
-                    }
-                }
+        HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+        when {
+            busy && catalog.liveChannels.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                LoadingState("Loading channels")
             }
-            Column(Modifier.weight(0.8f).fillMaxHeight().padding(top = 3.dp)) {
-                Text("NOW PLAYING", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
-                Spacer(Modifier.height(8.dp))
-                Surface(
-                    color = Color(0xFF141B25),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, Color(0x55C4F05A)),
-                    modifier = Modifier.fillMaxWidth().aspectRatio(1.75f),
-                ) {
-                    Box(
-                        Modifier.fillMaxSize().background(
-                            Brush.linearGradient(listOf(Color(0xFF263342), Color(0xFF121720), Color(0xFF30251B))),
-                        ),
-                    ) {
-                        Box(
-                            Modifier.fillMaxWidth().height(4.dp).align(Alignment.TopStart)
-                                .background(Brush.horizontalGradient(listOf(Lime, GoldLight, Color.Transparent))),
-                        )
-                        Column(
-                            Modifier.fillMaxSize().padding(22.dp),
-                            verticalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(color = Color(0x3324D18A), shape = RoundedCornerShape(6.dp)) {
-                                    Text("● LIVE", color = Color(0xFF7AE6B7), fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp))
-                                }
-                                Spacer(Modifier.weight(1f))
-                                Text("OATEC", color = TextMain.copy(alpha = 0.65f), fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
-                            }
-                            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                Text("Your screen. Your world.", color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
-                                Text("Choose a channel to start watching", color = TextMuted, fontSize = 12.sp)
-                            }
-                        }
-                    }
+            channels.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                EmptyState("No channels available", message.ifBlank { "Add or refresh an IPTV source to load channels." })
+            }
+            else -> LazyColumn(
+                state = channelListState,
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+                contentPadding = PaddingValues(top = 6.dp, bottom = 18.dp),
+            ) {
+                itemsIndexed(channels, key = { _, item -> item.id }) { _, item ->
+                    ChannelRow(
+                        number = channelNumber(item, catalog.liveChannels, preferences),
+                        entry = item.copy(title = preferences.channelTitle(item.id, item.title)),
+                        favorite = item.id in preferences.favorites(),
+                        hidden = item.id in preferences.hiddenChannels(),
+                        category = preferences.categoryFor(item.id, item.category),
+                        onSelect = { onPlay(item.copy(title = preferences.channelTitle(item.id, item.title))) },
+                        onPlay = { onPlay(item.copy(title = preferences.channelTitle(item.id, item.title))) },
+                        onFavorite = { onFavorite(item) },
+                        onOrganize = { onOrganize(item) },
+                        onHide = { onHide(item) },
+                    )
                 }
-                Spacer(Modifier.height(14.dp))
-                Text("REMOTE", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
-                Text("CH + / -  Change channel", color = TextMain, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
-                Text("Number keys  Direct channel", color = TextMain, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-                Text("OK  Play selected channel", color = TextMain, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-                if (message.isNotBlank()) Text(message, color = TextMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 15.dp))
             }
         }
     }
 }
-
 @Composable
 private fun ChannelRow(
     number: Int,
@@ -1093,6 +1356,7 @@ private fun ChannelRow(
     favorite: Boolean,
     hidden: Boolean,
     category: String,
+    onSelect: () -> Unit,
     onPlay: () -> Unit,
     onFavorite: () -> Unit,
     onOrganize: () -> Unit,
@@ -1103,7 +1367,7 @@ private fun ChannelRow(
         color = if (focused) Raised else Panel,
         shape = RoundedCornerShape(12.dp),
         border = if (focused) BorderStroke(1.dp, Lime) else null,
-        modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }.focusable().clickable { onPlay() },
+        modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }.focusable().clickable { onSelect() },
     ) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(number.toString().padStart(3, '0'), color = Lime, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(42.dp))
@@ -1147,17 +1411,23 @@ private fun MediaScreen(
     message: String,
     preferences: PlayerPreferences,
     recentEntries: List<MediaEntry>,
+    onLoadMore: () -> Unit,
     onPlay: (MediaEntry) -> Unit,
     onFavorite: (MediaEntry) -> Unit,
 ) {
     val filtered = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) }
+    val mediaListState = rememberLazyListState()
+    val lastMediaVisible = mediaListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+    LaunchedEffect(lastMediaVisible, entries.size) {
+        if (entries.isNotEmpty() && lastMediaVisible >= mediaListState.layoutInfo.totalItemsCount - 3) onLoadMore()
+    }
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 20.dp)) {
         Text("$title | ${filtered.size}", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         Spacer(Modifier.height(14.dp))
         when {
             busy && entries.isEmpty() -> LoadingState("Loading library")
             filtered.isEmpty() -> EmptyState("Nothing to watch yet", message.ifBlank { "This source may not provide ${title.lowercase()} metadata." })
-            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(bottom = 28.dp)) {
+            else -> LazyColumn(state = mediaListState, verticalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(bottom = 28.dp)) {
                 if (recentEntries.isNotEmpty()) {
                     item(key = "continue-watching") {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1182,7 +1452,7 @@ private fun MediaScreen(
                     }
                     item(key = "row:$category") {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(items.take(8), key = { it.id }) { entry ->
+                            items(items, key = { it.id }) { entry ->
                                 PosterCard(
                                     entry = entry,
                                     favorite = entry.id in preferences.favorites(),
@@ -1326,6 +1596,7 @@ private fun SeriesScreen(
     busy: Boolean,
     message: String,
     preferences: PlayerPreferences,
+    onLoadMore: () -> Unit,
     onSelect: (MediaEntry) -> Unit,
     onPlay: (MediaEntry) -> Unit,
     onFavorite: (MediaEntry) -> Unit,
@@ -1335,8 +1606,13 @@ private fun SeriesScreen(
             Text("SERIES", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             Spacer(Modifier.height(14.dp))
             val filtered = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) }
+            val seriesListState = rememberLazyListState()
+            val lastSeriesVisible = seriesListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            LaunchedEffect(lastSeriesVisible, entries.size) {
+                if (entries.isNotEmpty() && lastSeriesVisible >= seriesListState.layoutInfo.totalItemsCount - 3) onLoadMore()
+            }
             if (filtered.isEmpty()) EmptyState("No series available", message.ifBlank { "Series metadata is available from supported Xtream sources." })
-            else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            else LazyColumn(state = seriesListState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(filtered, key = { it.id }) { entry ->
                     var focused by remember { mutableStateOf(false) }
                     Surface(
@@ -1568,7 +1844,14 @@ private fun PlaybackDialog(
         ExoPlayer.Builder(context, renderersFactory)
             .setTrackSelector(trackSelector)
             .build()
-            .apply { setAudioAttributes(AudioAttributes.DEFAULT, true) }
+            .apply {
+                val mediaAudioAttributes = AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .build()
+                setAudioAttributes(mediaAudioAttributes, true)
+                volume = 1f
+            }
     }
     var vlcSession by remember { mutableStateOf<VlcPlaybackSession?>(null) }
     var useVlc by rememberSaveable { mutableStateOf(false) }
@@ -2135,7 +2418,7 @@ private fun importLocalPlaylist(context: Context, uri: Uri): PlayerSource {
                 val count = input.read(buffer)
                 if (count < 0) break
                 size += count
-                if (size > 40L * 1024 * 1024) throw IOException("Playlist exceeds the 40 MB import limit.")
+                if (size > 512L * 1024 * 1024) throw IOException("Playlist exceeds the 512 MB import limit.")
                 output.write(buffer, 0, count)
             }
         }

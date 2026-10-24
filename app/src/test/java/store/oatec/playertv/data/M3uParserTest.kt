@@ -36,6 +36,32 @@ class M3uParserTest {
     }
 
     @Test
+    fun streamingParserEmitsBoundedBatchesAndReturnsTotalCount() {
+        val playlist = """
+            #EXTM3U
+            #EXTINF:-1 group-title="News",One
+            https://stream.test/one.ts
+            #EXTINF:-1 group-title="News",Two
+            https://stream.test/two.ts
+            #EXTINF:-1 group-title="Movies",Three
+            https://stream.test/three.ts
+        """.trimIndent()
+        val batches = mutableListOf<List<store.oatec.playertv.model.MediaEntry>>()
+
+        val count = M3uParser.parseBatched(
+            playlist.reader(),
+            "source-1",
+            batchSize = 2,
+            maxChannels = 10,
+            onBatch = { batch -> batches.add(batch) },
+        )
+
+        assertEquals(3, count)
+        assertEquals(listOf(2, 1), batches.map { it.size })
+        assertEquals(listOf("One", "Two", "Three"), batches.flatten().map { it.title })
+    }
+
+    @Test
     fun channelIdentityIsStableAcrossRefreshes() {
         val playlist = "#EXTINF:-1 tvg-id=stable-id,Channel\nhttps://one.test/live"
 

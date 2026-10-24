@@ -194,8 +194,10 @@ class MediaCatalogStore(context: Context) : SQLiteOpenHelper(
             args += category
         }
         if (search.isNotBlank()) {
-            where.append(" AND title LIKE ? ESCAPE '\\'")
-            args += "%${escapeLike(search.trim())}%"
+            val pattern = "%${escapeLike(search.trim())}%"
+            where.append(" AND (title LIKE ? ESCAPE '\\' OR category LIKE ? ESCAPE '\\')")
+            args += pattern
+            args += pattern
         }
         val results = ArrayList<MediaEntry>(limit)
         readableDatabase.query(
@@ -231,11 +233,20 @@ class MediaCatalogStore(context: Context) : SQLiteOpenHelper(
         return results
     }
 
-    fun count(sourceId: String, section: String): Long =
-        readableDatabase.rawQuery(
-            "SELECT COUNT(*) FROM $TABLE WHERE source_id=? AND section=?",
-            arrayOf(sourceId, section),
+    fun count(sourceId: String, section: String, search: String = ""): Long {
+        val where = StringBuilder("source_id=? AND section=?")
+        val args = mutableListOf(sourceId, section)
+        if (search.isNotBlank()) {
+            val pattern = "%${escapeLike(search.trim())}%"
+            where.append(" AND (title LIKE ? ESCAPE '\\' OR category LIKE ? ESCAPE '\\')")
+            args += pattern
+            args += pattern
+        }
+        return readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM $TABLE WHERE ${where}",
+            args.toTypedArray(),
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else 0L }
+    }
 
     fun categories(sourceId: String, section: String): List<String> {
         val result = mutableListOf<String>()
