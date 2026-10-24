@@ -45,6 +45,8 @@ data class MediaEntry(
     val releaseDate: String = "",
     val director: String = "",
     val cast: String = "",
+    /** XMLTV channel identifier from the M3U tvg-id attribute, when provided. */
+    val epgChannelId: String = "",
 )
 
 data class SourceCatalog(
