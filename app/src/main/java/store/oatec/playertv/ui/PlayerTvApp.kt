@@ -380,28 +380,32 @@ fun PlayerTvApp() {
                 },
         ) {
             Column(Modifier.fillMaxSize()) {
-                NavigationRail(
-                    selected = currentSection,
-                    sourceName = activeSource?.name,
-                    compact = compactLandscape,
-                    onSelect = { section = it.name; selectedCategory = "All"; search = "" },
-                    onExit = { (context as? Activity)?.finishAndRemoveTask() },
-                )
-                Column(Modifier.weight(1f).fillMaxWidth()) {
-                    TopBar(
-                        title = currentSection.label,
+                if (currentSection !in setOf(Section.MOVIES, Section.SERIES)) {
+                    NavigationRail(
+                        selected = currentSection,
                         sourceName = activeSource?.name,
-                        search = search,
-                        onSearch = { search = it },
-                        busy = busy,
-                        onRefresh = { activeSource?.let { refresh(it, currentSection, force = true) } },
-                        showRefresh = currentSection in setOf(Section.LIVE, Section.MOVIES, Section.SERIES),
                         compact = compactLandscape,
-                        onAddSource = { showAddSource = true },
-                        onNumberPad = { showNumberPad = true },
-                        numberInput = numberInput,
+                        onSelect = { section = it.name; selectedCategory = "All"; search = "" },
+                        onExit = { (context as? Activity)?.finishAndRemoveTask() },
                     )
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                }
+                Column(Modifier.weight(1f).fillMaxWidth()) {
+                    if (currentSection !in setOf(Section.MOVIES, Section.SERIES)) {
+                        TopBar(
+                            title = currentSection.label,
+                            sourceName = activeSource?.name,
+                            search = search,
+                            onSearch = { search = it },
+                            busy = busy,
+                            onRefresh = { activeSource?.let { refresh(it, currentSection, force = true) } },
+                            showRefresh = currentSection in setOf(Section.LIVE, Section.MOVIES, Section.SERIES),
+                            compact = compactLandscape,
+                            onAddSource = { showAddSource = true },
+                            onNumberPad = { showNumberPad = true },
+                            numberInput = numberInput,
+                        )
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                    }
                     when (currentSection) {
                         Section.LIVE -> LiveScreen(
                             catalog = catalog,
@@ -421,13 +425,12 @@ fun PlayerTvApp() {
                             onHide = { item -> preferences.setHidden(item.id, item.id !in preferences.hiddenChannels()); preferenceRevision++ },
                         )
                         Section.MOVIES -> MediaScreen(
-                            title = "Movies",
                             entries = catalog.movies,
                             search = search,
                             busy = busy,
                             message = message,
                             preferences = preferences,
-                            recentEntries = preferences.recentlyWatched(catalog.movies + episodes),
+                            onBackHome = { section = Section.LIVE.name; search = ""; selectedCategory = "All" },
                             onPlay = { selectedDetails = it },
                             onFavorite = { item -> preferences.setFavorite(item.id, item.id !in preferences.favorites()); preferenceRevision++ },
                         )
@@ -439,6 +442,7 @@ fun PlayerTvApp() {
                             busy = busy,
                             message = message,
                             preferences = preferences,
+                            onBackHome = { section = Section.LIVE.name; search = ""; selectedCategory = "All" },
                             onSelect = { series ->
                                 selectedDetails = series
                                 val source = activeSource
@@ -484,6 +488,20 @@ fun PlayerTvApp() {
                                 premiumCode = code
                             },
                             onExit = { (context as? Activity)?.finishAndRemoveTask() },
+                        )
+                        Section.HOME -> LiveScreen(
+                            catalog = catalog,
+                            category = selectedCategory,
+                            search = search,
+                            preferences = preferences,
+                            preferenceRevision = preferenceRevision,
+                            message = message,
+                            busy = busy,
+                            onCategory = { selectedCategory = it },
+                            onPlay = { selectedMedia = it },
+                            onFavorite = { item -> preferences.setFavorite(item.id, item.id !in preferences.favorites()); preferenceRevision++ },
+                            onOrganize = { organizingChannel = it },
+                            onHide = { item -> preferences.setHidden(item.id, item.id !in preferences.hiddenChannels()); preferenceRevision++ },
                         )
                     }
                 }
