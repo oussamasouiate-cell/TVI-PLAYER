@@ -1532,8 +1532,11 @@ private fun LiveScreen(
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
                         val preview = selectedChannel
-                        if (preview != null && preview.logoUrl.isNotBlank()) AsyncImage(preview.logoUrl, contentDescription = preview.title, modifier = Modifier.size(90.dp))
-                        else Text("TV", color = Lime, fontSize = 42.sp, fontWeight = FontWeight.Black)
+                        if (preview != null) {
+                            ChannelMiniPreview(entry = preview)
+                        } else {
+                            Text("TV", color = Lime, fontSize = 42.sp, fontWeight = FontWeight.Black)
+                        }
                     }
                     Text(selectedChannel?.let { preferences.channelTitle(it.id, it.title) } ?: "Select a channel", color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 2)
                     selectedChannel?.let { item ->
@@ -1554,6 +1557,39 @@ private fun LiveScreen(
         }
     }
 }
+@Composable
+private fun ChannelMiniPreview(entry: MediaEntry) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val player = remember(context) {
+        ExoPlayer.Builder(context).build().apply { volume = 0f }
+    }
+    DisposableEffect(player) {
+        onDispose {
+            player.stop()
+            player.release()
+        }
+    }
+    LaunchedEffect(entry.id, entry.streamUrl) {
+        player.stop()
+        player.clearMediaItems()
+        player.setMediaItem(MediaItem.fromUri(entry.streamUrl))
+        player.prepare()
+        player.playWhenReady = true
+    }
+    AndroidView(
+        factory = { viewContext ->
+            PlayerView(viewContext).apply {
+                this.player = player
+                useController = false
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                keepScreenOn = false
+            }
+        },
+        update = { view -> view.player = player },
+        modifier = Modifier.fillMaxSize(),
+    )
+}
+
 @Composable
 private fun CategoryPill(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
