@@ -193,6 +193,22 @@ class PlayerPreferences(context: Context) {
             .apply()
     }
 
+    /** Remove a parent's explicit decision and return the item to automatic classification. */
+    fun clearKidsItemRule(itemId: String): Boolean {
+        val id = itemId.trim()
+        if (id.isEmpty()) return false
+        val allow = kidsAllowedItemIds().toMutableSet()
+        val block = kidsBlockedItemIds().toMutableSet()
+        val changed = allow.remove(id) or block.remove(id)
+        if (changed) {
+            preferences.edit()
+                .putString(KIDS_ALLOW_ITEM_IDS_KEY, JSONArray(allow.toList()).toString())
+                .putString(KIDS_BLOCK_ITEM_IDS_KEY, JSONArray(block.toList()).toString())
+                .apply()
+        }
+        return changed
+    }
+
     /** Unknown items are hidden while Kids Mode is active unless a parent allows them. */
     fun isAllowedInKidsMode(itemId: String, classifiedAsKidSafe: Boolean): Boolean {
         if (!kidsModeEnabled()) return true
