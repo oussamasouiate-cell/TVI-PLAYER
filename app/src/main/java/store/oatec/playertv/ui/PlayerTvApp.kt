@@ -807,6 +807,9 @@ private fun SettingsScreen(
     var showKidsPinDialog by remember { mutableStateOf(false) }
     var kidsPinInput by remember { mutableStateOf("") }
     var kidsCurrentPinInput by remember { mutableStateOf("") }
+    var showClearKidsPinDialog by remember { mutableStateOf(false) }
+    var clearKidsPinInput by remember { mutableStateOf("") }
+    var clearKidsPinError by remember { mutableStateOf("") }
     var kidsPinError by remember { mutableStateOf("") }
     var kidsPinSaved by remember { mutableStateOf(false) }
     var showKidsRulesDialog by remember { mutableStateOf(false) }
@@ -905,7 +908,39 @@ private fun SettingsScreen(
                         kidsPinSaved = false
                         showKidsPinDialog = true
                     }) { Text(if (preferences.hasKidsPin()) "Set / change PIN" else "Create PIN") }
+                    if (preferences.hasKidsPin()) OutlinedButton(onClick = { clearKidsPinInput = ""; clearKidsPinError = ""; showClearKidsPinDialog = true }) { Text("Remove PIN") }
                     if (kidsPinSaved) Text("PIN saved", color = GoldLight, fontSize = 11.sp)
+                }
+                if (showClearKidsPinDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showClearKidsPinDialog = false; clearKidsPinInput = ""; clearKidsPinError = "" },
+                        title = { Text("Remove Kids Mode PIN?") },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("You must enter the current PIN. Removing it will also turn Kids Mode off.", color = TextMuted, fontSize = 12.sp)
+                                OutlinedTextField(
+                                    value = clearKidsPinInput,
+                                    onValueChange = { value -> if (value.length <= 8 && value.all(Char::isDigit)) clearKidsPinInput = value },
+                                    label = { Text("Current PIN") },
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                                )
+                                if (clearKidsPinError.isNotBlank()) Text(clearKidsPinError, color = Color(0xFFFF7777), fontSize = 12.sp)
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                if (preferences.clearKidsPin(clearKidsPinInput)) {
+                                    kidsEnabled = false
+                                    showClearKidsPinDialog = false
+                                    clearKidsPinInput = ""
+                                    clearKidsPinError = ""
+                                } else clearKidsPinError = "Incorrect PIN."
+                            }) { Text("Remove PIN") }
+                        },
+                        dismissButton = { TextButton(onClick = { showClearKidsPinDialog = false; clearKidsPinInput = ""; clearKidsPinError = "" }) { Text("Cancel") } },
+                    )
                 }
                 if (showKidsRulesDialog) {
                     AlertDialog(
