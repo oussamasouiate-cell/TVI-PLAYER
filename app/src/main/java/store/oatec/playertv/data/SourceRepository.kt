@@ -189,12 +189,11 @@ class SourceRepository {
             var totalItems = 0
             while (reader.hasNext()) {
                 // Keep the import usable for very large provider catalogues.
-                // Save up to maxItems in bounded batches, then skip remaining JSON
-                // objects instead of failing the whole import and rolling back all
-                // channels/movies/series already received.
+                // Never silently report a partial catalogue as complete. If a provider
+                // exceeds the safety limit, fail the atomic import and keep the last good
+                // saved catalogue so the user can see and act on the error.
                 if (totalItems >= maxItems) {
-                    reader.skipValue()
-                    continue
+                    throw IOException("This catalogue exceeds the safe limit of $maxItems items. The previous saved catalogue was preserved.")
                 }
                 if (reader.peek() != JsonToken.BEGIN_OBJECT) {
                     reader.skipValue()
@@ -373,8 +372,8 @@ class SourceRepository {
         const val MAX_STREAM_RESPONSE_BYTES = 256 * 1024 * 1024
         const val MAX_CATEGORY_RESPONSE_BYTES = 8 * 1024 * 1024
         const val MAX_SERIES_RESPONSE_BYTES = 4 * 1024 * 1024
-        const val MAX_CHANNELS = 20_000
-        const val MAX_VOD_ITEMS = 20_000
+        const val MAX_CHANNELS = 100_000
+        const val MAX_VOD_ITEMS = 100_000
         const val MAX_REDIRECTS = 5
         const val INITIAL_STREAM_CAPACITY = 128
         const val DISPLAY_PAGE_SIZE = 500
