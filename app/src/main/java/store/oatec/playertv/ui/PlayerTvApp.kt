@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -213,21 +214,31 @@ fun PlayerTvApp() {
                         withContext(Dispatchers.IO) {
                             // Stream bounded batches directly into one SQLite transaction.
                             // A failed response rolls back, preserving the last good catalogue.
-                            mediaCatalogStore.beginImport(source.id, catalogSection.name).use { session ->
-                                val result = repository.loadCatalogBatched(source, catalogSection) { batch ->
+                            val result = mediaCatalogStore.beginImport(source.id, catalogSection.name).use { session ->
+                                val loaded = repository.loadCatalogBatched(source, catalogSection) { batch ->
                                     session.insertBatch(batch)
                                 }
                                 session.commit()
-                                result
+                                loaded
                             }
+                            val allEntries = buildList {
+                                var offset = 0
+                                while (true) {
+                                    val page = mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = offset)
+                                    addAll(page)
+                                    if (page.size < 500) break
+                                    offset += page.size
+                                }
+                            }
+                            result to allEntries
                         }
                     }
-                        .onSuccess { result ->
+                        .onSuccess { (result, allEntries) ->
                             if (source.id == activeSourceId) {
                                 catalog = when (catalogSection) {
-                                    CatalogSection.LIVE -> catalog.copy(liveChannels = result.liveChannels)
-                                    CatalogSection.MOVIES -> catalog.copy(movies = result.movies)
-                                    CatalogSection.SERIES -> catalog.copy(series = result.series)
+                                    CatalogSection.LIVE -> catalog.copy(liveChannels = allEntries)
+                                    CatalogSection.MOVIES -> catalog.copy(movies = allEntries)
+                                    CatalogSection.SERIES -> catalog.copy(series = allEntries)
                                 }
                                 if (catalogSection == CatalogSection.LIVE) selectedCategory = "All"
                                 loadedCatalogs = loadedCatalogs + loadKey
@@ -478,6 +489,7 @@ fun PlayerTvApp() {
                         Section.SETTINGS -> SettingsScreen(
                             preferences = preferences,
                             aboutRepository = aboutRepository,
+                            onManageSources = { section = Section.SOURCES.name },
                             premiumCode = premiumCode,
                             onSavePremiumCode = { code ->
                                 sourceStore.savePremiumCode(code)
@@ -702,6 +714,7 @@ private fun InitialSetupScreen(
 private fun SettingsScreen(
     preferences: PlayerPreferences,
     aboutRepository: OatecAboutRepository,
+    onManageSources: () -> Unit,
     premiumCode: String,
     onSavePremiumCode: (String) -> Unit,
     onExit: () -> Unit,
@@ -736,6 +749,19 @@ private fun SettingsScreen(
         Column {
             Text("Settings", color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Text("Playback preferences and OATEC information", color = TextMuted, fontSize = 12.sp)
+        }
+        Surface(color = Panel, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+            Row(
+                Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Sources & playlists", color = TextMain, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Manage existing providers or import a playlist.", color = TextMuted, fontSize = 11.sp)
+                }
+                OutlinedButton(onClick = onManageSources) { Text("Manage sources") }
+            }
         }
         Surface(color = Panel, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -837,67 +863,87 @@ private fun NavigationRail(
     onSelect: (Section) -> Unit,
     onExit: () -> Unit,
 ) {
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth()
             .background(Brush.horizontalGradient(listOf(Color(0xFF171D28), Color(0xFF0B0E14))))
-            .padding(horizontal = if (compact) 8.dp else 18.dp, vertical = if (compact) 6.dp else 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 12.dp),
+            .padding(horizontal = if (compact) 8.dp else 22.dp, vertical = if (compact) 7.dp else 12.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp),
     ) {
-        Surface(
-            color = Color(0xFF0D1117),
-            shape = RoundedCornerShape(10.dp),
-            border = BorderStroke(2.dp, Brush.linearGradient(listOf(Lime, GoldLight))),
-            modifier = Modifier.size(if (compact) 34.dp else 42.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text("IPTV", color = Lime, fontSize = if (compact) 8.sp else 10.sp, fontWeight = FontWeight.Black)
+            Surface(
+                color = Color(0xFF0D1117),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(2.dp, Brush.linearGradient(listOf(Lime, GoldLight))),
+                modifier = Modifier.size(if (compact) 32.dp else 40.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("TVI", color = Lime, fontSize = if (compact) 8.sp else 10.sp, fontWeight = FontWeight.Black)
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text("TVI PLAYER", color = TextMain, fontSize = if (compact) 12.sp else 15.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                if (!sourceName.isNullOrBlank()) Text(sourceName, color = TextMuted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            OutlinedButton(onClick = onExit, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp)) {
+                Text("Exit", fontSize = 10.sp)
             }
         }
-        Column(modifier = Modifier.widthIn(min = 58.dp, max = if (compact) 72.dp else 100.dp)) {
-            Text("OATEC", color = TextMain, fontSize = if (compact) 11.sp else 15.sp, fontWeight = FontWeight.Black, maxLines = 1)
-            if (!compact) Text("PLAYER TV", color = TextMuted, fontSize = 8.sp, letterSpacing = 1.sp, maxLines = 1)
-        }
         Row(
-            modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 8.dp),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 7.dp else 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            itemsInNavigation@ for (item in Section.entries) {
+            val mainItems = listOf(Section.LIVE, Section.MOVIES, Section.SERIES, Section.SETTINGS)
+            mainItems.forEach { item ->
                 val active = selected == item
                 Surface(
-                    color = if (active) Color(0xFF242D38) else Color.Transparent,
-                    shape = RoundedCornerShape(10.dp),
-                    border = if (active) BorderStroke(1.dp, Brush.horizontalGradient(listOf(Lime.copy(alpha = 0.9f), GoldLight.copy(alpha = 0.35f)))) else null,
-                    modifier = Modifier.weight(1f).focusable().clickable { onSelect(item) },
+                    color = if (active) Color(0xFF242D38) else Color(0xFF111722),
+                    shape = RoundedCornerShape(if (compact) 10.dp else 14.dp),
+                    border = BorderStroke(
+                        if (active) 2.dp else 1.dp,
+                        if (active) Brush.horizontalGradient(listOf(Lime, GoldLight)) else Brush.horizontalGradient(listOf(Color(0xFF303743), Color(0xFF242B35))),
+                    ),
+                    modifier = Modifier.weight(1f).height(if (compact) 58.dp else 76.dp)
+                        .focusable()
+                        .clickable { onSelect(item) },
                 ) {
-                    Box(
-                        modifier = Modifier.padding(horizontal = if (compact) 4.dp else 10.dp, vertical = if (compact) 9.dp else 12.dp),
-                        contentAlignment = Alignment.Center,
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = if (compact) 5.dp else 8.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
+                        Text(
+                            when (item) {
+                                Section.LIVE -> "▣"
+                                Section.MOVIES -> "▶"
+                                Section.SERIES -> "▤"
+                                else -> "⚙"
+                            },
+                            color = if (active) Lime else TextMuted,
+                            fontSize = if (compact) 16.sp else 20.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(Modifier.height(3.dp))
                         Text(
                             when (item) {
                                 Section.LIVE -> "TV LIVE"
                                 Section.MOVIES -> "FILM"
                                 Section.SERIES -> "SERIES"
-                                Section.SOURCES -> "SOURCES"
-                                Section.SETTINGS -> "SETTINGS"
+                                else -> "SETTING"
                             },
                             color = if (active) Lime else TextMain,
-                            fontSize = if (compact) 10.sp else 13.sp,
-                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                            fontSize = if (compact) 9.sp else 12.sp,
+                            fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
             }
-        }
-        if (!compact && sourceName != null) {
-            Text(sourceName, color = TextMuted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 110.dp))
-        }
-        OutlinedButton(onClick = onExit, contentPadding = PaddingValues(horizontal = if (compact) 8.dp else 12.dp, vertical = 4.dp)) {
-            Text("Exit", fontSize = if (compact) 10.sp else 12.sp)
         }
     }
 }
@@ -1182,7 +1228,7 @@ private fun MediaScreen(
                     }
                     item(key = "row:$category") {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(items.take(8), key = { it.id }) { entry ->
+                            items(items, key = { it.id }) { entry ->
                                 PosterCard(
                                     entry = entry,
                                     favorite = entry.id in preferences.favorites(),
