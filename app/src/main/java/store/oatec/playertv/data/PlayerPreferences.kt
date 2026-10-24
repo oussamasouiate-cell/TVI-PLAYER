@@ -229,6 +229,18 @@ class PlayerPreferences(context: Context) {
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
+    /** Selected playback engine: auto, exoplayer, or libvlc. */
+    fun playbackEngine(): String = preferences.getString(PLAYBACK_ENGINE_KEY, "auto")
+        ?.lowercase()
+        ?.takeIf { it in setOf("auto", "exoplayer", "libvlc") } ?: "auto"
+
+    fun setPlaybackEngine(engine: String) {
+        val normalized = engine.trim().lowercase()
+        if (normalized in setOf("auto", "exoplayer", "libvlc")) {
+            preferences.edit().putString(PLAYBACK_ENGINE_KEY, normalized).apply()
+        }
+    }
+
     private companion object {
         const val FAVORITES_KEY = "favorite_ids"
         const val KIDS_MODE_ENABLED_KEY = "kids_mode_enabled"
@@ -240,6 +252,7 @@ class PlayerPreferences(context: Context) {
         const val HIDDEN_KEY = "hidden_channels"
         const val HISTORY_KEY = "watch_history"
         const val RESUME_PLAYBACK_KEY = "resume_playback"
+        const val PLAYBACK_ENGINE_KEY = "playback_engine"
         const val MAX_HISTORY_ITEMS = 30
         const val MIN_RESUME_POSITION_MS = 60_000L
     }
