@@ -2406,7 +2406,7 @@ private fun importLocalPlaylist(context: Context, uri: Uri): PlayerSource {
                 val count = input.read(buffer)
                 if (count < 0) break
                 size += count
-                if (size > 40L * 1024 * 1024) throw IOException("Playlist exceeds the 40 MB import limit.")
+                if (size > 512L * 1024 * 1024) throw IOException("Playlist exceeds the 512 MB import limit.")
                 output.write(buffer, 0, count)
             }
         }
