@@ -229,16 +229,28 @@ fun PlayerTvApp() {
                 // Show the last successfully saved catalogue immediately while a large
                 // Xtream response is being downloaded. Read it in bounded DB pages.
                 if (source.id == activeSourceId) {
-                    val cached = withContext(Dispatchers.IO) {
-                        mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = 0)
+                    val cachedState = withContext(Dispatchers.IO) {
+                        mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = 0) to
+                            mediaCatalogStore.count(source.id, catalogSection.name)
                     }
+                    val cached = cachedState.first
+                    val cachedCount = cachedState.second
                     if (cached.isNotEmpty() && source.id == activeSourceId) {
+                        val safeCached = applyKidsModeFilter(cached, preferences)
                         catalog = when (catalogSection) {
-                            CatalogSection.LIVE -> catalog.copy(liveChannels = cached)
-                            CatalogSection.MOVIES -> catalog.copy(movies = cached)
-                            CatalogSection.SERIES -> catalog.copy(series = cached)
+                            CatalogSection.LIVE -> catalog.copy(liveChannels = safeCached)
+                            CatalogSection.MOVIES -> catalog.copy(movies = safeCached)
+                            CatalogSection.SERIES -> catalog.copy(series = safeCached)
                         }
-                        message = "Showing saved catalogue (" + cached.size + " items) while refreshing…"
+                        message = "Loaded saved catalogue (" + cachedCount + " items)."
+                    }
+                    // A populated local catalogue is the default on app startup and
+                    // section changes. Avoid downloading the full provider catalogue
+                    // every launch; refresh remains available through the explicit
+                    // refresh action (force=true).
+                    if (cachedCount > 0L && !force && source.id == activeSourceId) {
+                        loadedCatalogs = loadedCatalogs + loadKey
+                        return@launch
                     }
                 }
                 catalogLoadMutex.withLock {
