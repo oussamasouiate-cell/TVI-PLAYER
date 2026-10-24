@@ -170,6 +170,43 @@ class PlayerPreferences(context: Context) {
         return true
     }
 
+    /** Explicit parent decisions override automatic classification. */
+    fun kidsAllowedItemIds(): Set<String> = readKidsIds(KIDS_ALLOW_ITEM_IDS_KEY)
+
+    fun kidsBlockedItemIds(): Set<String> = readKidsIds(KIDS_BLOCK_ITEM_IDS_KEY)
+
+    fun setKidsItemAllowed(itemId: String, allowed: Boolean) {
+        val id = itemId.trim()
+        if (id.isEmpty()) return
+        val allow = kidsAllowedItemIds().toMutableSet()
+        val block = kidsBlockedItemIds().toMutableSet()
+        if (allowed) {
+            allow.add(id)
+            block.remove(id)
+        } else {
+            block.add(id)
+            allow.remove(id)
+        }
+        preferences.edit()
+            .putString(KIDS_ALLOW_ITEM_IDS_KEY, JSONArray(allow.toList()).toString())
+            .putString(KIDS_BLOCK_ITEM_IDS_KEY, JSONArray(block.toList()).toString())
+            .apply()
+    }
+
+    /** Unknown items are hidden while Kids Mode is active unless a parent allows them. */
+    fun isAllowedInKidsMode(itemId: String, classifiedAsKidSafe: Boolean): Boolean {
+        if (!kidsModeEnabled()) return true
+        val id = itemId.trim()
+        if (id.isEmpty() || id in kidsBlockedItemIds()) return false
+        if (id in kidsAllowedItemIds()) return true
+        return classifiedAsKidSafe
+    }
+
+    private fun readKidsIds(key: String): Set<String> = preferences.getString(key, null)
+        ?.let(::JSONArray)
+        ?.let { array -> (0 until array.length()).map { array.optString(it) }.filter(String::isNotBlank).toSet() }
+        .orEmpty()
+
     private fun pinDigest(pin: String): String {
         val bytes = java.security.MessageDigest.getInstance("SHA-256")
             .digest(pin.toByteArray(Charsets.UTF_8))
@@ -180,6 +217,8 @@ class PlayerPreferences(context: Context) {
         const val FAVORITES_KEY = "favorite_ids"
         const val KIDS_MODE_ENABLED_KEY = "kids_mode_enabled"
         const val KIDS_PIN_HASH_KEY = "kids_pin_sha256"
+        const val KIDS_ALLOW_ITEM_IDS_KEY = "kids_allow_item_ids"
+        const val KIDS_BLOCK_ITEM_IDS_KEY = "kids_block_item_ids"
         const val NEXT_CHANNEL_NUMBER_KEY = "next_channel_number"
         const val CATEGORIES_KEY = "custom_categories"
         const val HIDDEN_KEY = "hidden_channels"
