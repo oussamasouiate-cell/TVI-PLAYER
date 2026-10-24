@@ -34,6 +34,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -1244,6 +1245,7 @@ private fun LiveScreen(
     message: String,
     busy: Boolean,
     onCategory: (String) -> Unit,
+    onLoadMore: () -> Unit,
     onPlay: (MediaEntry) -> Unit,
     onFavorite: (MediaEntry) -> Unit,
     onOrganize: (MediaEntry) -> Unit,
@@ -1253,6 +1255,11 @@ private fun LiveScreen(
         visibleChannels(catalog, category, search, preferences)
     }
     var previewChannel by remember { mutableStateOf<MediaEntry?>(null) }
+    val channelListState = rememberLazyListState()
+    val lastChannelVisible = channelListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+    LaunchedEffect(lastChannelVisible, channels.size) {
+        if (channels.isNotEmpty() && lastChannelVisible >= channels.size - 10) onLoadMore()
+    }
     val categories = listOf("All", "Favorites", "Hidden") +
         catalog.liveChannels.map { preferences.categoryFor(it.id, it.category) }.distinct().sorted() +
         preferences.customCategories()
@@ -1297,7 +1304,7 @@ private fun LiveScreen(
                 when {
                     busy && catalog.liveChannels.isEmpty() -> LoadingState("Loading channels")
                     channels.isEmpty() -> EmptyState("No channels here", message.ifBlank { "Add or refresh a source to load live TV." })
-                    else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(5.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
+                    else -> LazyColumn(state = channelListState, verticalArrangement = Arrangement.spacedBy(5.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
                         itemsIndexed(channels, key = { _, item -> item.id }) { _, item ->
                             ChannelRow(
                                 number = channelNumber(item, catalog.liveChannels, preferences),
@@ -1437,17 +1444,23 @@ private fun MediaScreen(
     message: String,
     preferences: PlayerPreferences,
     recentEntries: List<MediaEntry>,
+    onLoadMore: () -> Unit,
     onPlay: (MediaEntry) -> Unit,
     onFavorite: (MediaEntry) -> Unit,
 ) {
     val filtered = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) }
+    val mediaListState = rememberLazyListState()
+    val lastMediaVisible = mediaListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+    LaunchedEffect(lastMediaVisible, entries.size) {
+        if (entries.isNotEmpty() && lastMediaVisible >= mediaListState.layoutInfo.totalItemsCount - 3) onLoadMore()
+    }
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 20.dp)) {
         Text("$title | ${filtered.size}", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         Spacer(Modifier.height(14.dp))
         when {
             busy && entries.isEmpty() -> LoadingState("Loading library")
             filtered.isEmpty() -> EmptyState("Nothing to watch yet", message.ifBlank { "This source may not provide ${title.lowercase()} metadata." })
-            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(bottom = 28.dp)) {
+            else -> LazyColumn(state = mediaListState, verticalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(bottom = 28.dp)) {
                 if (recentEntries.isNotEmpty()) {
                     item(key = "continue-watching") {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1616,6 +1629,7 @@ private fun SeriesScreen(
     busy: Boolean,
     message: String,
     preferences: PlayerPreferences,
+    onLoadMore: () -> Unit,
     onSelect: (MediaEntry) -> Unit,
     onPlay: (MediaEntry) -> Unit,
     onFavorite: (MediaEntry) -> Unit,
@@ -1625,8 +1639,13 @@ private fun SeriesScreen(
             Text("SERIES", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             Spacer(Modifier.height(14.dp))
             val filtered = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) }
+            val seriesListState = rememberLazyListState()
+            val lastSeriesVisible = seriesListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            LaunchedEffect(lastSeriesVisible, entries.size) {
+                if (entries.isNotEmpty() && lastSeriesVisible >= seriesListState.layoutInfo.totalItemsCount - 3) onLoadMore()
+            }
             if (filtered.isEmpty()) EmptyState("No series available", message.ifBlank { "Series metadata is available from supported Xtream sources." })
-            else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            else LazyColumn(state = seriesListState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(filtered, key = { it.id }) { entry ->
                     var focused by remember { mutableStateOf(false) }
                     Surface(
