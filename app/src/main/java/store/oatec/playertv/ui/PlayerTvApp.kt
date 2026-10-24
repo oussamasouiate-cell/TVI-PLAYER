@@ -1012,8 +1012,8 @@ private fun HomeDashboard(
                 val cards = listOf(
                     HomeCardData(Section.LIVE, "TV LIVE", "Chaînes en direct", "▣", "LIVE TV", listOf(Color(0xFF193348), Color(0xFF07121C))),
                     HomeCardData(Section.MOVIES, "FILM", "Films à la demande", "▰", "CINÉMA", listOf(Color(0xFF4A351D), Color(0xFF100D0A))),
-                    HomeCardData(Section.SERIES, "SERIES", "Séries & épisodes", "▤", "SERIES", listOf(Color(0xFF263746), Color(0xFF0A0D12))),
-                    HomeCardData(Section.SETTINGS, "SETTING", "Préférences & sources", "⚙", "OATEC", listOf(Color(0xFF3C2B13), Color(0xFF080A0D))),
+                    HomeCardData(Section.SERIES, "SIRRIES", "Séries & épisodes", "▤", "SIRRIES", listOf(Color(0xFF263746), Color(0xFF0A0D12))),
+                    HomeCardData(Section.SETTINGS, "SITTING", "Préférences & sources", "⚙", "OATEC", listOf(Color(0xFF3C2B13), Color(0xFF080A0D))),
                 )
                 cards.forEachIndexed { index, card ->
                     val active = index == 0
