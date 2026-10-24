@@ -964,6 +964,10 @@ private fun SettingsScreen(
                                     if (kidsRuleItemId.isBlank()) kidsRuleMessage = "Enter an item ID first."
                                     else { preferences.setKidsItemAllowed(kidsRuleItemId, false); kidsRuleMessage = "Item blocked on this device." }
                                 }) { Text("Block") }
+                                TextButton(onClick = {
+                                    if (kidsRuleItemId.isBlank()) kidsRuleMessage = "Enter an item ID first."
+                                    else kidsRuleMessage = if (preferences.clearKidsItemRule(kidsRuleItemId)) "Override cleared; automatic classification applies." else "No override exists for this item."
+                                }) { Text("Clear rule") }
                             }
                         },
                         dismissButton = { TextButton(onClick = { showKidsRulesDialog = false }) { Text("Close") } },
