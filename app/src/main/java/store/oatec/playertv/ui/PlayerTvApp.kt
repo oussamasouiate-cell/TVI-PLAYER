@@ -946,6 +946,21 @@ private fun SettingsScreen(
                     )
                 }
                 HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                var playbackEngine by remember { mutableStateOf(preferences.playbackEngine()) }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Playback engine", color = TextMain, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Auto switches to VLC after an ExoPlayer playback error. You can also select a player manually.", color = TextMuted, fontSize = 11.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("auto" to "Auto", "exoplayer" to "ExoPlayer", "libvlc" to "LibVLC").forEach { (value, label) ->
+                            if (playbackEngine == value) {
+                                Button(onClick = { playbackEngine = value; preferences.setPlaybackEngine(value) }) { Text(label) }
+                            } else {
+                                OutlinedButton(onClick = { playbackEngine = value; preferences.setPlaybackEngine(value) }) { Text(label) }
+                            }
+                        }
+                    }
+                }
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Watch history", color = TextMain, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
