@@ -129,31 +129,67 @@ class SourceRepository {
         val response = readText(apiUrl(source, "get_series_info", "series_id" to seriesId), MAX_SERIES_RESPONSE_BYTES)
         val root = JSONObject(response)
         val info = root.optJSONObject("info")
-        val episodes = root.optJSONObject("episodes") ?: return emptyList()
+        val episodesValue = root.opt("episodes") ?: return emptyList()
         val results = mutableListOf<MediaEntry>()
-        val seasonKeys = episodes.keys()
-        while (seasonKeys.hasNext()) {
-            val season = seasonKeys.next()
-            val seasonEpisodes = episodes.optJSONArray(season) ?: continue
-            for (index in 0 until seasonEpisodes.length()) {
-                val episode = seasonEpisodes.optJSONObject(index) ?: continue
-                val episodeId = episode.optString("id").takeIf(String::isNotBlank) ?: continue
-                val extension = safeExtension(episode.optString("container_extension"), "mp4")
-                val episodeNumber = episode.optString("episode_num")
-                results += MediaEntry(
-                    id = "${source.id}:episode:$episodeId",
-                    title = episode.optString("title").ifBlank { "Episode $episodeNumber" },
-                    category = "Season $season",
-                    streamUrl = streamUrl(source, "series", episodeId, extension),
-                    logoUrl = episode.optJSONObject("info")?.optString("movie_image").orEmpty(),
-                    kind = MediaKind.EPISODE,
-                    description = info?.optString("plot").orEmpty(),
-                    season = season,
-                    episodeNumber = episodeNumber,
-                )
+
+        fun appendEpisode(episode: JSONObject, season: String) {
+            // Xtream-compatible providers do not all use the same episode field names.
+            val episodeId = sequenceOf("id", "episode_id", "stream_id")
+                .map { episode.optString(it).trim() }
+                .firstOrNull { it.isNotBlank() && it != "null" }
+                ?: return
+            val episodeNumber = sequenceOf("episode_num", "episode_number", "number")
+                .map { episode.optString(it).trim() }
+                .firstOrNull { it.isNotBlank() && it != "null" }
+                .orEmpty()
+            val extension = safeExtension(
+                sequenceOf("container_extension", "extension", "container")
+                    .map { episode.optString(it).trim().removePrefix(".") }
+                    .firstOrNull { it.isNotBlank() && it != "null" }
+                    .orEmpty(),
+                "mp4",
+            )
+            val episodeInfo = episode.optJSONObject("info")
+            val episodeSeason = sequenceOf("season", "season_num", "season_number")
+                .map { episode.optString(it).trim() }
+                .firstOrNull { it.isNotBlank() && it != "null" }
+                ?: season.ifBlank { "1" }
+            val title = sequenceOf("title", "name")
+                .map { episode.optString(it).trim() }
+                .firstOrNull { it.isNotBlank() && it != "null" }
+                ?: "Episode ${episodeNumber.ifBlank { results.size.plus(1).toString() }}"
+            results += MediaEntry(
+                id = "${source.id}:episode:$episodeId",
+                title = title,
+                category = "Season $episodeSeason",
+                streamUrl = streamUrl(source, "series", episodeId, extension),
+                logoUrl = episodeInfo?.optString("movie_image").orEmpty(),
+                kind = MediaKind.EPISODE,
+                description = episodeInfo?.optString("plot")?.takeIf { it.isNotBlank() }
+                    ?: info?.optString("plot").orEmpty(),
+                season = episodeSeason,
+                episodeNumber = episodeNumber,
+            )
+        }
+
+        when (episodesValue) {
+            is JSONObject -> {
+                val seasonKeys = episodesValue.keys()
+                while (seasonKeys.hasNext()) {
+                    val season = seasonKeys.next()
+                    when (val seasonValue = episodesValue.opt(season)) {
+                        is JSONArray -> for (index in 0 until seasonValue.length()) {
+                            seasonValue.optJSONObject(index)?.let { appendEpisode(it, season) }
+                        }
+                        is JSONObject -> appendEpisode(seasonValue, season)
+                    }
+                }
+            }
+            is JSONArray -> for (index in 0 until episodesValue.length()) {
+                episodesValue.optJSONObject(index)?.let { appendEpisode(it, "") }
             }
         }
-        return results
+        return results.distinctBy { it.id }
     }
 
     private suspend fun loadXtreamCatalog(source: PlayerSource, section: CatalogSection): SourceCatalog {
