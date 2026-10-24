@@ -154,8 +154,8 @@ fun PlayerTvApp() {
     val activeSource = sources.firstOrNull { it.id == activeSourceId }
     var catalog by remember { mutableStateOf(SourceCatalog()) }
         var loadedCatalogs by remember { mutableStateOf<Set<String>>(emptySet()) }
-    // Always open the home dashboard on a fresh app launch; do not restore a stale section like SERIES.
-    var section by remember { mutableStateOf(Section.HOME.name) }
+    // Open directly on the live channel list; users can switch straight to Movies, Series, or Settings.
+    var section by remember { mutableStateOf(Section.LIVE.name) }
     var selectedCategory by rememberSaveable { mutableStateOf("All") }
     var search by rememberSaveable { mutableStateOf("") }
     var selectedMedia by remember { mutableStateOf<MediaEntry?>(null) }
@@ -410,7 +410,7 @@ fun PlayerTvApp() {
                     if (key.action != AndroidKeyEvent.ACTION_DOWN) return@onPreviewKeyEvent false
                     when (key.keyCode) {
                         AndroidKeyEvent.KEYCODE_BACK -> {
-                            if (currentSection != Section.HOME) { section = Section.HOME.name; true } else false
+                            if (currentSection != Section.LIVE) { section = Section.LIVE.name; true } else false
                         }
                         AndroidKeyEvent.KEYCODE_CHANNEL_UP -> {
                             if (currentSection == Section.LIVE && catalog.liveChannels.isNotEmpty()) {
@@ -475,7 +475,7 @@ fun PlayerTvApp() {
                     sourceName = activeSource?.name,
                     compact = compactLandscape,
                     onSelect = { section = it.name; selectedCategory = "All"; search = "" },
-                    onHome = { section = Section.HOME.name; selectedCategory = "All"; search = "" },
+                    onHome = { section = Section.LIVE.name; selectedCategory = "All"; search = "" },
                     onExit = { (context as? Activity)?.finishAndRemoveTask() },
                 )
                 Column(Modifier.weight(1f).fillMaxWidth()) {
@@ -1324,7 +1324,7 @@ private fun NavigationRail(
                 Text("Exit", fontSize = 10.sp)
             }
         }
-        // Removed the oversized four-button navigation strip; destinations remain available from the home dashboard.
+        // Navigation destinations open their actual content screens directly; no intermediate dashboard.
     }
 }
 
