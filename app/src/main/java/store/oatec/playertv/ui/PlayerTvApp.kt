@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items as gridItems
@@ -19,6 +20,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -179,6 +182,8 @@ fun PlayerTvApp() {
     var episodesBusy by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var activeLoadCount by remember { mutableStateOf(0) }
+    var catalogProgress by remember { mutableStateOf(0f) }
+    var catalogLoadedItems by remember { mutableStateOf(0) }
     var loadingMore by remember { mutableStateOf(false) }
     var preferenceRevision by remember { mutableStateOf(0) }
     var message by remember { mutableStateOf("") }
@@ -235,6 +240,8 @@ fun PlayerTvApp() {
         val loadKey = "${source.id}:${catalogSection.name}"
         if (!force && loadKey in loadedCatalogs) return
         message = ""
+        catalogProgress = 0f
+        catalogLoadedItems = 0
         activeLoadCount++
         busy = true
         scope.launch {
@@ -274,8 +281,15 @@ fun PlayerTvApp() {
                             val result = mediaCatalogStore.beginImport(source.id, catalogSection.name).use { session ->
                                 val loaded = repository.loadCatalogBatched(source, catalogSection) { batch ->
                                     session.insertBatch(batch)
+                                    catalogLoadedItems += batch.size
+                                    // Providers often do not expose a reliable total in advance.
+                                    // Progress fills gradually, with the final 8% reserved for completion.
+                                    val count = catalogLoadedItems
+                                    catalogProgress = (1f - kotlin.math.exp(-count / 9000f).toFloat()).coerceAtMost(0.92f)
                                 }
                                 session.commit()
+                                catalogProgress = 1f
+                                kotlinx.coroutines.delay(450)
                                 loaded
                             }
                             val firstPage = mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = 0)
@@ -1680,7 +1694,7 @@ private fun LiveScreen(
                 items(categories, key = { it }) { item -> CategoryPill(item, category == item) { onCategory(item) } }
             }
             when {
-                busy && catalog.liveChannels.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingState("Loading channels") }
+                busy && catalog.liveChannels.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingState("Loading channels", catalogProgress, catalogLoadedItems) }
                 channels.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { EmptyState("No channels available", message.ifBlank { "Add or refresh an IPTV source to load channels." }) }
                 else -> LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 130.dp), state = listState, modifier = Modifier.fillMaxSize(),
@@ -1855,7 +1869,7 @@ private fun MediaScreen(
         }
         Spacer(Modifier.height(4.dp))
         when {
-            busy && entries.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingState("Loading library") }
+            busy && entries.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingState("Loading library", catalogProgress, catalogLoadedItems) }
             filtered.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { EmptyState("Nothing to watch yet", message.ifBlank { "No titles match this category. Categories depend on the metadata supplied by your provider." }) }
             else -> LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 176.dp),
@@ -2657,10 +2671,36 @@ private fun OrganizeChannelDialog(
 }
 
 @Composable
-private fun LoadingState(label: String) {
-    Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        CircularProgressIndicator(color = Lime)
-        Text(label, color = TextMuted, fontSize = 13.sp)
+private fun LoadingState(label: String, progress: Float? = null, loadedItems: Int = 0) {
+    if (progress == null) {
+        Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            CircularProgressIndicator(color = Lime)
+            Text(label, color = TextMuted, fontSize = 13.sp)
+        }
+        return
+    }
+
+    val animatedProgress by animateFloatAsState(targetValue = progress.coerceIn(0f, 1f), animationSpec = tween(350), label = "catalog-cup-fill")
+    Column(Modifier.fillMaxSize().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Box(Modifier.width(108.dp).height(142.dp), contentAlignment = Alignment.BottomCenter) {
+            Box(Modifier.fillMaxSize().padding(horizontal = 5.dp, vertical = 4.dp)
+                .background(Color.White.copy(alpha = 0.035f), RoundedCornerShape(bottomStart = 22.dp, bottomEnd = 22.dp, topStart = 8.dp, topEnd = 8.dp))
+                .clip(RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp, topStart = 5.dp, topEnd = 5.dp))) {
+                Box(Modifier.fillMaxWidth().fillMaxHeight(animatedProgress).align(Alignment.BottomCenter)
+                    .background(Brush.verticalGradient(listOf(GoldLight, Lime, Color(0xFFB77D17)))))
+            }
+            Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent,
+                shape = RoundedCornerShape(bottomStart = 22.dp, bottomEnd = 22.dp, topStart = 8.dp, topEnd = 8.dp),
+                border = BorderStroke(3.dp, GoldLight.copy(alpha = 0.9f))) {}
+            Box(Modifier.fillMaxWidth().height(8.dp).align(Alignment.TopCenter).padding(horizontal = 1.dp).background(GoldLight, RoundedCornerShape(50)))
+        }
+        Spacer(Modifier.height(22.dp))
+        Text(label, color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        Text("${(animatedProgress * 100).toInt()}%", color = GoldLight, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        if (loadedItems > 0) Text("$loadedItems items loaded", color = TextMuted, fontSize = 12.sp)
+        Spacer(Modifier.height(8.dp))
+        Text("Please wait until the catalogue is ready", color = TextMuted, fontSize = 12.sp)
     }
 }
 
