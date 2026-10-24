@@ -483,7 +483,7 @@ fun PlayerTvApp() {
                     sourceName = activeSource?.name,
                     compact = compactLandscape,
                     onSelect = { section = it.name; selectedCategory = "All"; search = "" },
-                    onHome = { if (currentSection == Section.LIVE) { activeSource?.let { refresh(it, Section.LIVE, force = true) } } else { section = Section.LIVE.name; selectedCategory = "All"; search = "" } },
+                    onHome = { section = Section.HOME.name; selectedCategory = "All"; search = "" },
                     onExit = { (context as? Activity)?.finishAndRemoveTask() },
                 )
                 Column(Modifier.weight(1f).fillMaxWidth()) {
