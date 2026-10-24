@@ -171,6 +171,7 @@ fun PlayerTvApp() {
     var organizingChannel by remember { mutableStateOf<MediaEntry?>(null) }
     var pendingSeries by remember { mutableStateOf<MediaEntry?>(null) }
     var episodes by remember { mutableStateOf<List<MediaEntry>>(emptyList()) }
+    var episodesBusy by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var activeLoadCount by remember { mutableStateOf(0) }
     var loadingMore by remember { mutableStateOf(false) }
@@ -292,6 +293,7 @@ fun PlayerTvApp() {
         catalog = SourceCatalog()
         loadedCatalogs = emptySet()
         episodes = emptyList()
+        episodesBusy = false
         pendingSeries = null
     }
 
@@ -518,7 +520,7 @@ fun PlayerTvApp() {
                             episodes = episodes,
                             selectedSeries = pendingSeries,
                             search = search,
-                            busy = busy,
+                            busy = episodesBusy,
                             message = message,
                             preferences = preferences,
                             onLoadMore = { loadMore(Section.SERIES) },
@@ -529,7 +531,8 @@ fun PlayerTvApp() {
                                     message = "Series episodes require an Xtream source."
                                 } else {
                                     pendingSeries = series
-                                    busy = true
+                                    episodes = emptyList()
+                                    episodesBusy = true
                                     scope.launch {
                                         runCatching {
                                             withContext(Dispatchers.IO) {
@@ -537,7 +540,7 @@ fun PlayerTvApp() {
                                             }
                                         }.onSuccess { episodes = it }
                                             .onFailure { message = it.message ?: "Could not load episodes." }
-                                        busy = false
+                                        episodesBusy = false
                                     }
                                 }
                             },
