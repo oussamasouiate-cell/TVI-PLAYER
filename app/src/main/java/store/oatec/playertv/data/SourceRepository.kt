@@ -252,6 +252,7 @@ class SourceRepository {
                 var releaseDate = ""
                 var director = ""
                 var cast = ""
+                var epgChannelId = ""
                 reader.beginObject()
                 while (reader.hasNext()) {
                     when (reader.nextName()) {
@@ -273,6 +274,8 @@ class SourceRepository {
                         "release_date", "releaseDate" -> if (type == "live") reader.skipValue() else releaseDate = readJsonValue(reader, 32)
                         "director" -> if (type == "live") reader.skipValue() else director = readJsonValue(reader, MAX_FIELD_LENGTH)
                         "cast" -> if (type == "live") reader.skipValue() else cast = readJsonValue(reader, MAX_DESCRIPTION_LENGTH)
+                        "epg_channel_id", "epg_channel_id_name", "tvg-id", "tvg_id" ->
+                            epgChannelId = readJsonValue(reader, MAX_FIELD_LENGTH)
                         else -> reader.skipValue()
                     }
                 }
@@ -295,6 +298,7 @@ class SourceRepository {
                     releaseDate = releaseDate,
                     director = director,
                     cast = cast,
+                    epgChannelId = epgChannelId,
                 )
                 totalItems++
                 if (onBatch == null) {
