@@ -2669,6 +2669,105 @@ private fun visibleChannels(
         (search.isBlank() || channel.title.contains(search, true) || channel.category.contains(search, true))
 }
 
+@Composable
+private fun KidsDashboard(
+    compact: Boolean,
+    section: Section,
+    movies: List<MediaEntry>,
+    series: List<MediaEntry>,
+    channels: List<MediaEntry>,
+    search: String,
+    onSearch: (String) -> Unit,
+    onSection: (Section) -> Unit,
+    onPlay: (MediaEntry) -> Unit,
+    onMovieDetails: (MediaEntry) -> Unit,
+    onExit: () -> Unit,
+) {
+    val visible = remember(section, movies, series, channels, search) {
+        val source = when (section) {
+            Section.LIVE -> channels
+            Section.SERIES -> series
+            else -> movies
+        }
+        source.filter { search.isBlank() || it.title.contains(search, ignoreCase = true) || it.category.contains(search, ignoreCase = true) }
+    }
+    Column(
+        Modifier.fillMaxSize().background(Color(0xFF071522)).padding(if (compact) 12.dp else 24.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 14.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text("TVI KIDS", color = Color(0xFF74D7FF), fontSize = if (compact) 22.sp else 32.sp, fontWeight = FontWeight.Black)
+                Text("Un univers sûr pour les enfants", color = Color(0xFFE5F4FF), fontSize = if (compact) 11.sp else 14.sp)
+            }
+            OutlinedButton(onClick = onExit) { Text("Parent / PIN") }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(Section.LIVE to "Chaînes", Section.MOVIES to "Dessins & films", Section.SERIES to "Séries").forEach { (target, label) ->
+                Button(
+                    onClick = { onSection(target) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (section == target) Color(0xFF176C91) else Color(0xFF153047),
+                        contentColor = Color.White,
+                    ),
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = if (compact) 5.dp else 10.dp),
+                ) { Text(label, fontSize = if (compact) 10.sp else 13.sp, maxLines = 1) }
+            }
+        }
+        OutlinedTextField(
+            value = search,
+            onValueChange = onSearch,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("Rechercher du contenu enfant") },
+        )
+        Text(
+            when (section) {
+                Section.LIVE -> "CHAÎNES POUR ENFANTS"
+                Section.SERIES -> "SÉRIES"
+                else -> "FILMS & DESSINS ANIMÉS"
+            },
+            color = Color(0xFF9FE5FF),
+            fontSize = if (compact) 12.sp else 15.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        if (visible.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    if (search.isBlank()) "Aucun contenu vérifié disponible pour le moment." else "Aucun résultat. Essayez un autre mot.",
+                    color = Color(0xFFE5F4FF),
+                )
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(if (compact) 125.dp else 175.dp),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                gridItems(visible, key = { it.id }) { entry ->
+                    Surface(
+                        color = Color(0xFF10283B),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, Color(0xFF2A7897)),
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            if (section == Section.MOVIES || section == Section.HOME) onMovieDetails(entry) else onPlay(entry)
+                        },
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Text(if (section == Section.LIVE) "▶  TV" else "✦", color = Color(0xFF74D7FF), fontSize = if (compact) 18.sp else 24.sp, fontWeight = FontWeight.Bold)
+                            Text(entry.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            if (entry.category.isNotBlank()) Text(entry.category, color = Color(0xFFB6D5E5), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /** Applies the device-local Kids Mode gate to every loaded catalogue page. */
 private fun applyKidsModeFilter(entries: List<MediaEntry>, preferences: PlayerPreferences): List<MediaEntry> {
     if (!preferences.kidsModeEnabled()) return entries
