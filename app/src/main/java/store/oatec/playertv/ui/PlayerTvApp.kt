@@ -1024,6 +1024,7 @@ private fun LiveScreen(
     val channels = remember(catalog.liveChannels, category, search, preferenceRevision) {
         visibleChannels(catalog, category, search, preferences)
     }
+    var previewChannel by remember { mutableStateOf<MediaEntry?>(null) }
     val categories = listOf("All", "Favorites", "Hidden") +
         catalog.liveChannels.map { preferences.categoryFor(it.id, it.category) }.distinct().sorted() +
         preferences.customCategories()
@@ -1076,6 +1077,7 @@ private fun LiveScreen(
                                 favorite = item.id in preferences.favorites(),
                                 hidden = item.id in preferences.hiddenChannels(),
                                 category = preferences.categoryFor(item.id, item.category),
+                                onSelect = { previewChannel = item.copy(title = preferences.channelTitle(item.id, item.title)) },
                                 onPlay = { onPlay(item.copy(title = preferences.channelTitle(item.id, item.title))) },
                                 onFavorite = { onFavorite(item) },
                                 onOrganize = { onOrganize(item) },
@@ -1086,7 +1088,7 @@ private fun LiveScreen(
                 }
             }
             Column(Modifier.weight(0.8f).fillMaxHeight().padding(top = 3.dp)) {
-                Text("NOW PLAYING", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                Text(if (previewChannel == null) "CHANNEL INFO" else "CHANNEL INFO", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                 Spacer(Modifier.height(8.dp))
                 Surface(
                     color = Color(0xFF141B25),
@@ -1114,9 +1116,14 @@ private fun LiveScreen(
                                 Spacer(Modifier.weight(1f))
                                 Text("OATEC", color = TextMain.copy(alpha = 0.65f), fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
                             }
-                            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                Text("Your screen. Your world.", color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
-                                Text("Choose a channel to start watching", color = TextMuted, fontSize = 12.sp)
+                            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                val preview = previewChannel
+                                if (preview != null && preview.logoUrl.isNotBlank()) {
+                                    AsyncImage(preview.logoUrl, contentDescription = preview.title, modifier = Modifier.size(42.dp))
+                                }
+                                Text(preview?.title ?: "Choose a channel", color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(preview?.category ?: "Channel information appears here.", color = TextMuted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(if (preview == null) "Select a channel to view details." else "Press twice to watch this channel.", color = Lime, fontSize = 11.sp)
                             }
                         }
                     }
@@ -1139,6 +1146,7 @@ private fun ChannelRow(
     favorite: Boolean,
     hidden: Boolean,
     category: String,
+    onSelect: () -> Unit,
     onPlay: () -> Unit,
     onFavorite: () -> Unit,
     onOrganize: () -> Unit,
@@ -1149,7 +1157,8 @@ private fun ChannelRow(
         color = if (focused) Raised else Panel,
         shape = RoundedCornerShape(12.dp),
         border = if (focused) BorderStroke(1.dp, Lime) else null,
-        modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }.focusable().clickable { onPlay() },
+        modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }.focusable()
+            .combinedClickable(onClick = onSelect, onDoubleClick = onPlay),
     ) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(number.toString().padStart(3, '0'), color = Lime, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(42.dp))
