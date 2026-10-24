@@ -934,6 +934,7 @@ private fun HomeDashboard(
     onSelect: (Section) -> Unit,
     onExit: () -> Unit,
 ) {
+    var selectedHomeCard by remember { mutableStateOf(Section.LIVE) }
     Box(
         Modifier.fillMaxSize()
             .background(Ink)
@@ -1016,7 +1017,7 @@ private fun HomeDashboard(
                     HomeCardData(Section.SETTINGS, "SITTING", "Préférences & sources", "⚙", "OATEC", listOf(Color(0xFF3C2B13), Color(0xFF080A0D))),
                 )
                 cards.forEachIndexed { index, card ->
-                    val active = index == 0
+                    val active = card.section == selectedHomeCard
                     Surface(
                         color = Color(0xCC05080C),
                         shape = RoundedCornerShape(if (compact) 12.dp else 20.dp),
@@ -1026,8 +1027,12 @@ private fun HomeDashboard(
                             else Brush.linearGradient(listOf(Color(0xFF41434A), Color(0xFF20242B))),
                         ),
                         modifier = Modifier.weight(1f).fillMaxHeight()
+                            .onFocusChanged { if (it.isFocused) selectedHomeCard = card.section }
                             .focusable()
-                            .clickable { onSelect(card.section) }
+                            .clickable {
+                                selectedHomeCard = card.section
+                                onSelect(card.section)
+                            }
                             .drawBehind {
                                 if (active) {
                                     drawRect(
