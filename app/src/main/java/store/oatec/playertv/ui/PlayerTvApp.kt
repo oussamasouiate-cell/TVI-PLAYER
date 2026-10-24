@@ -1118,7 +1118,6 @@ private fun SettingsScreen(
                             TextButton(onClick = {
                                 if (preferences.verifyKidsPin(kidsExitPinInput)) {
                                     kidsEnabled = preferences.setKidsModeEnabled(false)
-                                    preferenceRevision++
                                     showKidsExitDialog = false
                                     kidsExitPinInput = ""
                                     kidsExitPinError = ""
