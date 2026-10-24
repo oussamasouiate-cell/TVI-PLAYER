@@ -263,15 +263,16 @@ fun PlayerTvApp() {
             CatalogSection.MOVIES -> catalog.movies.size
             CatalogSection.SERIES -> catalog.series.size
         }
+        val requestedSearch = search
         loadingMore = true
         scope.launch {
             try {
                 val page = withContext(Dispatchers.IO) {
                     val total = mediaCatalogStore.count(source.id, catalogSection.name)
                     if (currentSize.toLong() >= total) emptyList()
-                    else mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = currentSize, search = search)
+                    else mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = currentSize, search = requestedSearch)
                 }
-                if (source.id == activeSourceId && page.isNotEmpty()) {
+                if (source.id == activeSourceId && requestedSearch == search && page.isNotEmpty()) {
                     catalog = when (catalogSection) {
                         CatalogSection.LIVE -> catalog.copy(liveChannels = catalog.liveChannels + page)
                         CatalogSection.MOVIES -> catalog.copy(movies = catalog.movies + page)
