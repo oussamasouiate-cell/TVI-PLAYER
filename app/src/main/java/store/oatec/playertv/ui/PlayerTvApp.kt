@@ -162,7 +162,8 @@ fun PlayerTvApp() {
     val activeSource = sources.firstOrNull { it.id == activeSourceId }
     var catalog by remember { mutableStateOf(SourceCatalog()) }
         var loadedCatalogs by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var section by rememberSaveable { mutableStateOf(Section.HOME.name) }
+    // Always open the home dashboard on a fresh app launch; do not restore a stale section like SERIES.
+    var section by remember { mutableStateOf(Section.HOME.name) }
     var selectedCategory by rememberSaveable { mutableStateOf("All") }
     var search by rememberSaveable { mutableStateOf("") }
     var selectedMedia by remember { mutableStateOf<MediaEntry?>(null) }
