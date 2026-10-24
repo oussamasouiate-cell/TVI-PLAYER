@@ -268,7 +268,7 @@ fun PlayerTvApp() {
         scope.launch {
             try {
                 val page = withContext(Dispatchers.IO) {
-                    val total = mediaCatalogStore.count(source.id, catalogSection.name)
+                    val total = mediaCatalogStore.count(source.id, catalogSection.name, search = requestedSearch)
                     if (currentSize.toLong() >= total) emptyList()
                     else mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = currentSize, search = requestedSearch)
                 }
