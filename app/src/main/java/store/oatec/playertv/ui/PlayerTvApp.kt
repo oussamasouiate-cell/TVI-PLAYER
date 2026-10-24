@@ -491,20 +491,6 @@ fun PlayerTvApp() {
                             },
                             onExit = { (context as? Activity)?.finishAndRemoveTask() },
                         )
-                        Section.HOME -> LiveScreen(
-                            catalog = catalog,
-                            category = selectedCategory,
-                            search = search,
-                            preferences = preferences,
-                            preferenceRevision = preferenceRevision,
-                            message = message,
-                            busy = busy,
-                            onCategory = { selectedCategory = it },
-                            onPlay = { selectedMedia = it },
-                            onFavorite = { item -> preferences.setFavorite(item.id, item.id !in preferences.favorites()); preferenceRevision++ },
-                            onOrganize = { organizingChannel = it },
-                            onHide = { item -> preferences.setHidden(item.id, item.id !in preferences.hiddenChannels()); preferenceRevision++ },
-                        )
                     }
                 }
             }
