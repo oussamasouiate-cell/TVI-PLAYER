@@ -137,7 +137,7 @@ private data class VlcPlaybackSession(
 private data class VlcAudioTrack(val id: Int, val name: String)
 
 private enum class Section(val label: String) {
-    LIVE("Live TV"), MOVIES("Movies"), SERIES("Series"), SOURCES("Sources"), SETTINGS("Settings"),
+    HOME("Home"), LIVE("Live TV"), MOVIES("Movies"), SERIES("Series"), SOURCES("Sources"), SETTINGS("Settings"),
 }
 
 @Composable
@@ -161,7 +161,7 @@ fun PlayerTvApp() {
     val activeSource = sources.firstOrNull { it.id == activeSourceId }
     var catalog by remember { mutableStateOf(SourceCatalog()) }
         var loadedCatalogs by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var section by rememberSaveable { mutableStateOf(Section.LIVE.name) }
+    var section by rememberSaveable { mutableStateOf(Section.HOME.name) }
     var selectedCategory by rememberSaveable { mutableStateOf("All") }
     var search by rememberSaveable { mutableStateOf("") }
     var selectedMedia by remember { mutableStateOf<MediaEntry?>(null) }
@@ -178,7 +178,7 @@ fun PlayerTvApp() {
     var numberInput by rememberSaveable { mutableStateOf("") }
     var selectedChannelId by rememberSaveable { mutableStateOf("") }
     val scope = rememberCoroutineScope()
-    val currentSection = Section.entries.firstOrNull { it.name == section } ?: Section.LIVE
+    val currentSection = Section.entries.firstOrNull { it.name == section } ?: Section.HOME
 
     fun refresh(source: PlayerSource, requestedSection: Section = currentSection, force: Boolean = false) {
         val catalogSection = when (requestedSection) {
@@ -284,7 +284,7 @@ fun PlayerTvApp() {
                     sources += source
                     sourceStore.save(sources)
                     activeSourceId = source.id
-                    section = Section.LIVE.name
+                    section = Section.HOME.name
                     message = "Playlist imported"
                 }.onFailure { message = it.message ?: "Could not import playlist." }
                 busy = false
@@ -321,7 +321,7 @@ fun PlayerTvApp() {
                     sources += source
                     sourceStore.save(sources)
                     activeSourceId = source.id
-                    section = Section.LIVE.name
+                    section = Section.HOME.name
                 },
             )
         } else {
@@ -349,6 +349,9 @@ fun PlayerTvApp() {
                     val key = event.nativeKeyEvent
                     if (key.action != AndroidKeyEvent.ACTION_DOWN) return@onPreviewKeyEvent false
                     when (key.keyCode) {
+                        AndroidKeyEvent.KEYCODE_BACK -> {
+                            if (currentSection != Section.HOME) { section = Section.HOME.name; true } else false
+                        }
                         AndroidKeyEvent.KEYCODE_CHANNEL_UP -> {
                             if (currentSection == Section.LIVE && catalog.liveChannels.isNotEmpty()) {
                                 val channels = visibleChannels(catalog, selectedCategory, search, preferences)
@@ -398,12 +401,21 @@ fun PlayerTvApp() {
                     }
                 },
         ) {
+            if (currentSection == Section.HOME) {
+                HomeDashboard(
+                    compact = compactLandscape,
+                    sourceName = activeSource?.name,
+                    onSelect = { section = it.name; selectedCategory = "All"; search = "" },
+                    onExit = { (context as? Activity)?.finishAndRemoveTask() },
+                )
+            } else {
             Column(Modifier.fillMaxSize()) {
                 NavigationRail(
                     selected = if (currentSection == Section.SOURCES) Section.SETTINGS else currentSection,
                     sourceName = activeSource?.name,
                     compact = compactLandscape,
                     onSelect = { section = it.name; selectedCategory = "All"; search = "" },
+                    onHome = { section = Section.HOME.name; selectedCategory = "All"; search = "" },
                     onExit = { (context as? Activity)?.finishAndRemoveTask() },
                 )
                 Column(Modifier.weight(1f).fillMaxWidth()) {
@@ -507,6 +519,7 @@ fun PlayerTvApp() {
                         )
                     }
                 }
+            }
             }
             if (showAddSource) {
                 AddSourceDialog(
@@ -864,11 +877,188 @@ private fun SettingsScreen(
 }
 
 @Composable
+private fun HomeDashboard(
+    compact: Boolean,
+    sourceName: String?,
+    onSelect: (Section) -> Unit,
+    onExit: () -> Unit,
+) {
+    Box(
+        Modifier.fillMaxSize()
+            .background(Ink)
+            .drawBehind {
+                drawRect(
+                    Brush.radialGradient(
+                        colors = listOf(Color(0x665A350A), Color(0x1AE8B83E), Color.Transparent),
+                        center = Offset(size.width * 0.52f, size.height * 0.08f),
+                        radius = size.maxDimension * 0.88f,
+                    ),
+                )
+                drawRect(
+                    Brush.radialGradient(
+                        colors = listOf(Color(0x44331D08), Color.Transparent),
+                        center = Offset(size.width * 0.08f, size.height * 0.92f),
+                        radius = size.maxDimension * 0.62f,
+                    ),
+                )
+            },
+    ) {
+        Column(
+            Modifier.fillMaxSize().padding(horizontal = if (compact) 16.dp else 34.dp, vertical = if (compact) 12.dp else 22.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 18.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth().height(if (compact) 62.dp else 104.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 18.dp),
+            ) {
+                Surface(
+                    color = Color(0xFF090B0E),
+                    shape = RoundedCornerShape(if (compact) 12.dp else 18.dp),
+                    border = BorderStroke(2.dp, Brush.linearGradient(listOf(GoldLight, Lime, Color(0xFF8B5812)))),
+                    modifier = Modifier.size(if (compact) 48.dp else 76.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                            Text("▶", color = Lime, fontSize = if (compact) 16.sp else 25.sp, fontWeight = FontWeight.Black)
+                            Text("TVI", color = GoldLight, fontSize = if (compact) 9.sp else 13.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+                Column(Modifier.weight(1.1f), verticalArrangement = Arrangement.Center) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("TVI", color = Lime, fontSize = if (compact) 20.sp else 34.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                        Text("PLAYER", color = TextMain, fontSize = if (compact) 20.sp else 34.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                    }
+                    Text("Your entertainment, your way", color = TextMuted, fontSize = if (compact) 9.sp else 15.sp, maxLines = 1)
+                }
+                Column(
+                    Modifier.weight(1f).padding(horizontal = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("🛒", color = Lime, fontSize = if (compact) 17.sp else 27.sp)
+                        Text("OATEC", color = GoldLight, fontSize = if (compact) 17.sp else 30.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                        Text("STORE", color = TextMain.copy(alpha = 0.86f), fontSize = if (compact) 11.sp else 18.sp, fontWeight = FontWeight.Light, maxLines = 1)
+                    }
+                    Text("VOTRE BOUTIQUE EN LIGNE", color = Lime.copy(alpha = 0.8f), fontSize = if (compact) 7.sp else 10.sp, letterSpacing = if (compact) 1.sp else 2.sp, maxLines = 1)
+                }
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("◉  WIFI", color = TextMain.copy(alpha = 0.8f), fontSize = if (compact) 9.sp else 13.sp)
+                    OutlinedButton(
+                        onClick = { onSelect(Section.SETTINGS) },
+                        contentPadding = PaddingValues(horizontal = if (compact) 8.dp else 13.dp, vertical = 2.dp),
+                    ) { Text("⚙  ${if (compact) "Settings" else "SETTINGS"}", color = GoldLight, fontSize = if (compact) 9.sp else 12.sp) }
+                }
+            }
+
+            Row(
+                Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val cards = listOf(
+                    HomeCardData(Section.LIVE, "TV LIVE", "Chaînes en direct", "▣", "LIVE TV", listOf(Color(0xFF193348), Color(0xFF07121C))),
+                    HomeCardData(Section.MOVIES, "FILM", "Films à la demande", "▰", "CINÉMA", listOf(Color(0xFF4A351D), Color(0xFF100D0A))),
+                    HomeCardData(Section.SERIES, "SERIES", "Séries & épisodes", "▤", "SERIES", listOf(Color(0xFF263746), Color(0xFF0A0D12))),
+                    HomeCardData(Section.SETTINGS, "SETTING", "Préférences & sources", "⚙", "OATEC", listOf(Color(0xFF3C2B13), Color(0xFF080A0D))),
+                )
+                cards.forEachIndexed { index, card ->
+                    val active = index == 0
+                    Surface(
+                        color = Color(0xCC05080C),
+                        shape = RoundedCornerShape(if (compact) 12.dp else 20.dp),
+                        border = BorderStroke(
+                            if (active) 2.dp else 1.dp,
+                            if (active) Brush.linearGradient(listOf(GoldLight, Lime, Color(0xFFB87816)))
+                            else Brush.linearGradient(listOf(Color(0xFF41434A), Color(0xFF20242B))),
+                        ),
+                        modifier = Modifier.weight(1f).fillMaxHeight()
+                            .focusable()
+                            .clickable { onSelect(card.section) }
+                            .drawBehind {
+                                if (active) {
+                                    drawRect(
+                                        Brush.radialGradient(
+                                            colors = listOf(Color(0x44E8B83E), Color.Transparent),
+                                            center = Offset(size.width * 0.5f, size.height * 0.28f),
+                                            radius = size.maxDimension * 0.65f,
+                                        ),
+                                    )
+                                }
+                            },
+                    ) {
+                        Column(
+                            Modifier.fillMaxSize().padding(horizontal = if (compact) 7.dp else 14.dp, vertical = if (compact) 8.dp else 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Box(
+                                Modifier.fillMaxWidth().weight(1f)
+                                    .background(Brush.verticalGradient(card.artColors), RoundedCornerShape(if (compact) 8.dp else 14.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    card.artLabel,
+                                    color = TextMain.copy(alpha = 0.10f),
+                                    fontSize = if (compact) 26.sp else 48.sp,
+                                    fontWeight = FontWeight.Black,
+                                    maxLines = 1,
+                                )
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    Text(card.symbol, color = Lime, fontSize = if (compact) 37.sp else 62.sp, fontWeight = FontWeight.Bold)
+                                    Box(Modifier.width(if (compact) 35.dp else 54.dp).height(3.dp).background(Brush.horizontalGradient(listOf(Color.Transparent, Lime, GoldLight, Color.Transparent))))
+                                }
+                            }
+                            Spacer(Modifier.height(if (compact) 6.dp else 12.dp))
+                            Text(card.title, color = if (active) GoldLight else TextMain, fontSize = if (compact) 12.sp else 23.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                            Text(card.subtitle, color = TextMuted, fontSize = if (compact) 8.sp else 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Row(Modifier.fillMaxWidth().padding(top = if (compact) 4.dp else 10.dp), horizontalArrangement = Arrangement.End) {
+                                Text("›", color = if (active) Lime else TextMuted, fontSize = if (compact) 23.sp else 31.sp, fontWeight = FontWeight.Light)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Row(
+                Modifier.fillMaxWidth().height(if (compact) 28.dp else 42.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.width(if (compact) 22.dp else 34.dp).height(2.dp).background(Lime))
+                    Text("OATEC", color = Lime, fontSize = if (compact) 9.sp else 13.sp, letterSpacing = 3.sp, fontWeight = FontWeight.Bold)
+                    Text("STORE", color = TextMain, fontSize = if (compact) 9.sp else 13.sp, letterSpacing = 3.sp)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 22.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("♢  Service fiable", color = TextMuted, fontSize = if (compact) 8.sp else 11.sp, maxLines = 1)
+                    Text("ϟ  Accès rapide", color = TextMuted, fontSize = if (compact) 8.sp else 11.sp, maxLines = 1)
+                    Text("◉  Support 24/7", color = TextMuted, fontSize = if (compact) 8.sp else 11.sp, maxLines = 1)
+                }
+                Text("Votre satisfaction est notre priorité", color = GoldLight, fontSize = if (compact) 8.sp else 13.sp, maxLines = 1)
+            }
+        }
+    }
+}
+
+private data class HomeCardData(
+    val section: Section,
+    val title: String,
+    val subtitle: String,
+    val symbol: String,
+    val artLabel: String,
+    val artColors: List<Color>,
+)
+
+@Composable
 private fun NavigationRail(
     selected: Section,
     sourceName: String?,
     compact: Boolean,
     onSelect: (Section) -> Unit,
+    onHome: () -> Unit,
     onExit: () -> Unit,
 ) {
     Column(
@@ -895,6 +1085,9 @@ private fun NavigationRail(
             Column(Modifier.weight(1f)) {
                 Text("TVI PLAYER", color = TextMain, fontSize = if (compact) 12.sp else 15.sp, fontWeight = FontWeight.Black, maxLines = 1)
                 if (!sourceName.isNullOrBlank()) Text(sourceName, color = TextMuted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp)) {
+                Text("⌂ Home", fontSize = 10.sp)
             }
             OutlinedButton(onClick = onExit, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp)) {
                 Text("Exit", fontSize = 10.sp)
