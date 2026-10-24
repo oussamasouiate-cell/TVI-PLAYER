@@ -808,6 +808,9 @@ private fun SettingsScreen(
     var kidsPinInput by remember { mutableStateOf("") }
     var kidsPinError by remember { mutableStateOf("") }
     var kidsPinSaved by remember { mutableStateOf(false) }
+    var showKidsRulesDialog by remember { mutableStateOf(false) }
+    var kidsRuleItemId by remember { mutableStateOf("") }
+    var kidsRuleMessage by remember { mutableStateOf("") }
 
     fun loadAbout() {
         loadingAbout = true
@@ -876,7 +879,7 @@ private fun SettingsScreen(
                     Column(Modifier.weight(1f)) {
                         Text("Parental PIN protection", color = TextMain, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         Text(
-                            if (preferences.hasKidsPin()) "A local PIN is configured. Content filtering still needs to be completed."
+                            if (preferences.hasKidsPin()) "PIN protected. Unknown content is hidden unless classified as child-safe or allowed manually."
                             else "Set a 4–8 digit PIN before enabling Kids Mode.",
                             color = TextMuted, fontSize = 11.sp,
                         )
@@ -892,6 +895,7 @@ private fun SettingsScreen(
                     })
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { showKidsRulesDialog = true; kidsRuleItemId = ""; kidsRuleMessage = "" }) { Text("Manage content rules") }
                     OutlinedButton(onClick = {
                         kidsPinInput = ""
                         kidsPinError = ""
@@ -899,6 +903,33 @@ private fun SettingsScreen(
                         showKidsPinDialog = true
                     }) { Text(if (preferences.hasKidsPin()) "Set / change PIN" else "Create PIN") }
                     if (kidsPinSaved) Text("PIN saved", color = GoldLight, fontSize = 11.sp)
+                }
+                if (showKidsRulesDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showKidsRulesDialog = false },
+                        title = { Text("Kids Mode content rules") },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Enter the exact catalogue item ID to allow or block it. These rules are saved on this device.", color = TextMuted, fontSize = 12.sp)
+                                OutlinedTextField(value = kidsRuleItemId, onValueChange = { kidsRuleItemId = it.trim() }, label = { Text("Catalogue item ID") }, singleLine = true)
+                                Text("Allowed: ${preferences.kidsAllowedItemIds().size} · Blocked: ${preferences.kidsBlockedItemIds().size}", color = TextMuted, fontSize = 11.sp)
+                                if (kidsRuleMessage.isNotBlank()) Text(kidsRuleMessage, color = GoldLight, fontSize = 12.sp)
+                            }
+                        },
+                        confirmButton = {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                TextButton(onClick = {
+                                    if (kidsRuleItemId.isBlank()) kidsRuleMessage = "Enter an item ID first."
+                                    else { preferences.setKidsItemAllowed(kidsRuleItemId, true); kidsRuleMessage = "Item allowed on this device." }
+                                }) { Text("Allow") }
+                                TextButton(onClick = {
+                                    if (kidsRuleItemId.isBlank()) kidsRuleMessage = "Enter an item ID first."
+                                    else { preferences.setKidsItemAllowed(kidsRuleItemId, false); kidsRuleMessage = "Item blocked on this device." }
+                                }) { Text("Block") }
+                            }
+                        },
+                        dismissButton = { TextButton(onClick = { showKidsRulesDialog = false }) { Text("Close") } },
+                    )
                 }
                 if (showKidsPinDialog) {
                     AlertDialog(
