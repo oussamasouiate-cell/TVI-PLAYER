@@ -33,6 +33,7 @@ class SecureSourceStore(context: Context) {
                         serverUrl = item.optString("serverUrl"),
                         username = item.optString("username"),
                         password = item.optString("password"),
+                        epgUrl = item.optString("epgUrl"),
                     ),
                 )
             }
@@ -49,7 +50,8 @@ class SecureSourceStore(context: Context) {
                     .put("type", source.type.name)
                     .put("serverUrl", source.serverUrl)
                     .put("username", source.username)
-                    .put("password", source.password),
+                    .put("password", source.password)
+                    .put("epgUrl", source.epgUrl),
             )
         }
         preferences.edit().putString(SOURCES_KEY, encrypt(array.toString())).apply()
