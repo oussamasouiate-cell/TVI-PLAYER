@@ -467,6 +467,11 @@ fun PlayerTvApp() {
                     val key = event.nativeKeyEvent
                     if (key.action != AndroidKeyEvent.ACTION_DOWN) return@onPreviewKeyEvent false
                     when (key.keyCode) {
+                        AndroidKeyEvent.KEYCODE_HOME,
+                        AndroidKeyEvent.KEYCODE_MENU -> {
+                            goHome()
+                            true
+                        }
                         AndroidKeyEvent.KEYCODE_BACK -> {
                             if (currentSection != Section.LIVE) { section = Section.LIVE.name; true } else false
                         }
