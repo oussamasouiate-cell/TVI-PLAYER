@@ -438,7 +438,7 @@ fun PlayerTvApp() {
                     if (key.action != AndroidKeyEvent.ACTION_DOWN) return@onPreviewKeyEvent false
                     when (key.keyCode) {
                         AndroidKeyEvent.KEYCODE_BACK -> {
-                            if (currentSection !in setOf(Section.LIVE, Section.MOVIES, Section.SERIES)) { section = Section.LIVE.name; true } else false
+                            if (currentSection != Section.LIVE) { section = Section.LIVE.name; true } else false
                         }
                         AndroidKeyEvent.KEYCODE_CHANNEL_UP -> {
                             if (currentSection == Section.LIVE && catalog.liveChannels.isNotEmpty()) {
