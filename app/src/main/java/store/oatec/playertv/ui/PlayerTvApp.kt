@@ -1653,7 +1653,7 @@ private fun MediaScreen(
                     item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "continue-watching-heading") {
                         Text("Continue watching", color = TextMain, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                     }
-                    items(recentEntries.take(8), key = { "recent:${it.id}" }) { entry ->
+                    gridItems(recentEntries.take(8), key = { "recent:${it.id}" }) { entry ->
                         PosterCard(
                             entry = entry,
                             favorite = entry.id in preferences.favorites(),
