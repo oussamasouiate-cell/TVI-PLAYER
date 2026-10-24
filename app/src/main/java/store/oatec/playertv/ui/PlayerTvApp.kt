@@ -171,6 +171,7 @@ fun PlayerTvApp() {
     var episodes by remember { mutableStateOf<List<MediaEntry>>(emptyList()) }
     var busy by remember { mutableStateOf(false) }
     var activeLoadCount by remember { mutableStateOf(0) }
+    var loadingMore by remember { mutableStateOf(false) }
     var preferenceRevision by remember { mutableStateOf(0) }
     var message by remember { mutableStateOf("") }
     var showAddSource by remember { mutableStateOf(false) }
@@ -198,15 +199,7 @@ fun PlayerTvApp() {
                 // Xtream response is being downloaded. Read it in bounded DB pages.
                 if (source.id == activeSourceId) {
                     val cached = withContext(Dispatchers.IO) {
-                        buildList {
-                            var offset = 0
-                            while (true) {
-                                val page = mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = offset)
-                                addAll(page)
-                                if (page.size < 500) break
-                                offset += page.size
-                            }
-                        }
+                        mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = 0)
                     }
                     if (cached.isNotEmpty() && source.id == activeSourceId) {
                         catalog = when (catalogSection) {
@@ -229,28 +222,21 @@ fun PlayerTvApp() {
                                 session.commit()
                                 loaded
                             }
-                            val allEntries = buildList {
-                                var offset = 0
-                                while (true) {
-                                    val page = mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = offset)
-                                    addAll(page)
-                                    if (page.size < 500) break
-                                    offset += page.size
-                                }
-                            }
-                            result to allEntries
+                            val firstPage = mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = 0)
+                            val totalCount = mediaCatalogStore.count(source.id, catalogSection.name)
+                            Triple(result, firstPage, totalCount)
                         }
                     }
-                        .onSuccess { (result, allEntries) ->
+                        .onSuccess { (result, firstPage, totalCount) ->
                             if (source.id == activeSourceId) {
                                 catalog = when (catalogSection) {
-                                    CatalogSection.LIVE -> catalog.copy(liveChannels = allEntries)
-                                    CatalogSection.MOVIES -> catalog.copy(movies = allEntries)
-                                    CatalogSection.SERIES -> catalog.copy(series = allEntries)
+                                    CatalogSection.LIVE -> catalog.copy(liveChannels = firstPage)
+                                    CatalogSection.MOVIES -> catalog.copy(movies = firstPage)
+                                    CatalogSection.SERIES -> catalog.copy(series = firstPage)
                                 }
                                 if (catalogSection == CatalogSection.LIVE) selectedCategory = "All"
                                 loadedCatalogs = loadedCatalogs + loadKey
-                                message = "${result.liveChannels.size} live channels | ${result.movies.size} movies | ${result.series.size} series"
+                                message = "$totalCount ${catalogSection.name.lowercase()} items saved; showing pages of up to 500."
                             }
                         }
                         .onFailure { if (source.id == activeSourceId) message = it.message ?: "Could not load this source." }
@@ -258,6 +244,43 @@ fun PlayerTvApp() {
             } finally {
                 activeLoadCount = (activeLoadCount - 1).coerceAtLeast(0)
                 busy = activeLoadCount > 0
+            }
+        }
+    }
+
+    fun loadMore(requestedSection: Section) {
+        val source = sources.firstOrNull { it.id == activeSourceId } ?: return
+        val catalogSection = when (requestedSection) {
+            Section.LIVE -> CatalogSection.LIVE
+            Section.MOVIES -> CatalogSection.MOVIES
+            Section.SERIES -> CatalogSection.SERIES
+            else -> return
+        }
+        if (loadingMore) return
+        val currentSize = when (catalogSection) {
+            CatalogSection.LIVE -> catalog.liveChannels.size
+            CatalogSection.MOVIES -> catalog.movies.size
+            CatalogSection.SERIES -> catalog.series.size
+        }
+        loadingMore = true
+        scope.launch {
+            try {
+                val page = withContext(Dispatchers.IO) {
+                    val total = mediaCatalogStore.count(source.id, catalogSection.name)
+                    if (currentSize.toLong() >= total) emptyList()
+                    else mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = currentSize)
+                }
+                if (source.id == activeSourceId && page.isNotEmpty()) {
+                    catalog = when (catalogSection) {
+                        CatalogSection.LIVE -> catalog.copy(liveChannels = catalog.liveChannels + page)
+                        CatalogSection.MOVIES -> catalog.copy(movies = catalog.movies + page)
+                        CatalogSection.SERIES -> catalog.copy(series = catalog.series + page)
+                    }
+                }
+            } catch (error: Exception) {
+                if (source.id == activeSourceId) message = error.message ?: "Could not load the next catalogue page."
+            } finally {
+                loadingMore = false
             }
         }
     }
@@ -444,6 +467,7 @@ fun PlayerTvApp() {
                             message = message,
                             busy = busy,
                             onCategory = { selectedCategory = it },
+                            onLoadMore = { loadMore(Section.LIVE) },
                             onPlay = {
                                 selectedChannelId = it.id
                                 selectedMedia = it.copy(title = preferences.channelTitle(it.id, it.title))
@@ -460,6 +484,7 @@ fun PlayerTvApp() {
                             message = message,
                             preferences = preferences,
                             recentEntries = preferences.recentlyWatched(catalog.movies + episodes),
+                            onLoadMore = { loadMore(Section.MOVIES) },
                             onPlay = { selectedDetails = it },
                             onFavorite = { item -> preferences.setFavorite(item.id, item.id !in preferences.favorites()); preferenceRevision++ },
                         )
@@ -471,6 +496,7 @@ fun PlayerTvApp() {
                             busy = busy,
                             message = message,
                             preferences = preferences,
+                            onLoadMore = { loadMore(Section.SERIES) },
                             onSelect = { series ->
                                 selectedDetails = series
                                 val source = activeSource
