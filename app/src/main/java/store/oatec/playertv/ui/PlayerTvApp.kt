@@ -2790,11 +2790,25 @@ private fun KidsDashboard(
 /** Applies the device-local Kids Mode gate to every loaded catalogue page. */
 private fun applyKidsModeFilter(entries: List<MediaEntry>, preferences: PlayerPreferences): List<MediaEntry> {
     if (!preferences.kidsModeEnabled()) return entries
-    val childSafeTerms = listOf("kids", "children", "educational", "education", "junior", "preschool", "toddler", "disney junior", "nick jr", "طفل", "أطفال", "براعم")
+
+    // Read the parent rules once per catalogue pass. Reading and parsing both JSON
+    // preference arrays for every single item can stall/crash on very large IPTV lists.
+    val allowedIds = preferences.kidsAllowedItemIds()
+    val blockedIds = preferences.kidsBlockedItemIds()
+    val childSafeTerms = listOf(
+        "kids", "children", "educational", "education", "junior", "preschool",
+        "toddler", "disney junior", "nick jr", "طفل", "أطفال", "براعم",
+    )
     return entries.filter { entry ->
-        val searchable = (entry.title + " " + entry.category).lowercase()
-        val classifiedSafe = childSafeTerms.any { it in searchable }
-        preferences.isAllowedInKidsMode(entry.id, classifiedSafe)
+        val id = entry.id.trim()
+        if (id.isEmpty() || id in blockedIds) {
+            false
+        } else if (id in allowedIds) {
+            true
+        } else {
+            val searchable = (entry.title + " " + entry.category).lowercase()
+            childSafeTerms.any { it in searchable }
+        }
     }
 }
 
