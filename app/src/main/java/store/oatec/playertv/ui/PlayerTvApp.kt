@@ -2222,6 +2222,13 @@ private fun PlaybackDialog(
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
     var showList by remember { mutableStateOf(false) }
+    var showQualityDialog by remember { mutableStateOf(false) }
+    val qualityOptions = remember(entry.id, channels) {
+        if (entry.kind != MediaKind.LIVE) emptyList()
+        else channels.filter { it.kind == MediaKind.LIVE && sameChannelIdentity(it, entry) }
+            .distinctBy { it.id }
+            .sortedByDescending { streamQualityRank(it) }
+    }
     var activeEngine by remember(entry.id) { mutableStateOf(preferences.playbackEngine()) }
     val vlcSession = remember(context, entry.id, activeEngine) {
         if (activeEngine == "libvlc") runCatching { VlcPlaybackSession(context, entry.streamUrl) }.getOrNull() else null
@@ -2350,6 +2357,9 @@ private fun PlaybackDialog(
                 }
             }
             Row(Modifier.align(Alignment.TopEnd).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (entry.kind == MediaKind.LIVE && qualityOptions.size > 1) {
+                    OutlinedButton(onClick = { showQualityDialog = true }) { Text("Choose quality") }
+                }
                 if (entry.kind == MediaKind.LIVE && channels.isNotEmpty()) {
                     OutlinedButton(onClick = { showList = !showList }) { Text(if (showList) "Hide channels" else "Channels") }
                 }
@@ -2403,6 +2413,32 @@ private fun PlaybackDialog(
                 }
             }
         }
+    }
+    if (showQualityDialog) {
+        AlertDialog(
+            onDismissRequest = { showQualityDialog = false },
+            title = { Text("Choose stream quality") },
+            text = {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(qualityOptions, key = { it.id }) { option ->
+                        Surface(
+                            color = if (option.id == entry.id) Raised else Color.Transparent,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                showQualityDialog = false
+                                onPlay(option)
+                            },
+                        ) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text(option.title, color = if (option.id == entry.id) Lime else TextMain, fontWeight = FontWeight.SemiBold)
+                                Text(qualityLabel(option).ifBlank { "Quality not identified" }, color = TextMuted, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showQualityDialog = false }) { Text("Done") } },
+        )
     }
 }
 
