@@ -183,6 +183,9 @@ fun PlayerTvApp() {
     var message by remember { mutableStateOf("") }
     var showAddSource by remember { mutableStateOf(false) }
     var showNumberPad by remember { mutableStateOf(false) }
+    var showKidsExitDialog by remember { mutableStateOf(false) }
+    var kidsExitPinInput by remember { mutableStateOf("") }
+    var kidsExitPinError by remember { mutableStateOf("") }
     var numberInput by rememberSaveable { mutableStateOf("") }
     var selectedChannelId by rememberSaveable { mutableStateOf("") }
     var epgPrograms by remember(activeSourceId) { mutableStateOf<List<EpgProgram>>(emptyList()) }
@@ -524,7 +527,28 @@ fun PlayerTvApp() {
                     }
                 },
         ) {
-            if (currentSection == Section.HOME) {
+            if (preferences.kidsModeEnabled()) {
+                KidsDashboard(
+                    compact = compactLandscape,
+                    section = currentSection,
+                    movies = applyKidsModeFilter(catalog.movies, preferences),
+                    series = applyKidsModeFilter(catalog.series, preferences),
+                    channels = applyKidsModeFilter(catalog.liveChannels, preferences),
+                    search = search,
+                    onSearch = { search = it },
+                    onSection = { next ->
+                        section = next.name
+                        selectedCategory = "All"
+                        search = ""
+                        selectedMedia = null
+                        selectedDetails = null
+                        pendingSeries = null
+                    },
+                    onPlay = { selectedMedia = it },
+                    onMovieDetails = { selectedDetails = it },
+                    onExit = { kidsExitPinInput = ""; kidsExitPinError = ""; showKidsExitDialog = true },
+                )
+            } else if (currentSection == Section.HOME) {
                 HomeDashboard(
                     compact = compactLandscape,
                     sourceName = activeSource?.name,
@@ -663,6 +687,41 @@ fun PlayerTvApp() {
                     }
                 }
             }
+            }
+            if (showKidsExitDialog) {
+                AlertDialog(
+                    onDismissRequest = { showKidsExitDialog = false; kidsExitPinInput = ""; kidsExitPinError = "" },
+                    title = { Text("Parent PIN required") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Enter the parent PIN to leave Kids Mode.", color = TextMuted, fontSize = 12.sp)
+                            OutlinedTextField(
+                                value = kidsExitPinInput,
+                                onValueChange = { value -> if (value.length <= 8 && value.all(Char::isDigit)) kidsExitPinInput = value },
+                                label = { Text("Parent PIN") },
+                                singleLine = true,
+                                visualTransformation = PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            )
+                            if (kidsExitPinError.isNotBlank()) Text(kidsExitPinError, color = ErrorRed, fontSize = 12.sp)
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            if (preferences.verifyKidsPin(kidsExitPinInput)) {
+                                preferences.setKidsModeEnabled(false)
+                                section = Section.HOME.name
+                                search = ""
+                                kidsExitPinInput = ""
+                                kidsExitPinError = ""
+                                showKidsExitDialog = false
+                            } else kidsExitPinError = "Incorrect PIN."
+                        }) { Text("Exit Kids Mode") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showKidsExitDialog = false; kidsExitPinInput = ""; kidsExitPinError = "" }) { Text("Cancel") }
+                    },
+                )
             }
             if (showAddSource) {
                 AddSourceDialog(
