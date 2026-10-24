@@ -1335,59 +1335,7 @@ private fun NavigationRail(
                 Text("Exit", fontSize = 10.sp)
             }
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(if (compact) 7.dp else 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            val mainItems = listOf(Section.LIVE, Section.MOVIES, Section.SERIES, Section.SETTINGS)
-            mainItems.forEach { item ->
-                val active = selected == item
-                Surface(
-                    color = if (active) Color(0xFF242D38) else Color(0xFF111722),
-                    shape = RoundedCornerShape(if (compact) 10.dp else 14.dp),
-                    border = BorderStroke(
-                        if (active) 2.dp else 1.dp,
-                        if (active) Brush.horizontalGradient(listOf(Lime, GoldLight)) else Brush.horizontalGradient(listOf(Color(0xFF303743), Color(0xFF242B35))),
-                    ),
-                    modifier = Modifier.weight(1f).height(if (compact) 58.dp else 76.dp)
-                        .focusable()
-                        .clickable { onSelect(item) },
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = if (compact) 5.dp else 8.dp),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(
-                            when (item) {
-                                Section.LIVE -> "▣"
-                                Section.MOVIES -> "▶"
-                                Section.SERIES -> "▤"
-                                else -> "⚙"
-                            },
-                            color = if (active) Lime else TextMuted,
-                            fontSize = if (compact) 16.sp else 20.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Spacer(Modifier.height(3.dp))
-                        Text(
-                            when (item) {
-                                Section.LIVE -> "TV LIVE"
-                                Section.MOVIES -> "FILM"
-                                Section.SERIES -> "SERIES"
-                                else -> "SETTING"
-                            },
-                            color = if (active) Lime else TextMain,
-                            fontSize = if (compact) 9.sp else 12.sp,
-                            fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-        }
+        // Removed the oversized four-button navigation strip; destinations remain available from the home dashboard.
     }
 }
 
