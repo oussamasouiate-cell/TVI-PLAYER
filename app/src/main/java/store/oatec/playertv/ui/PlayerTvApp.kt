@@ -1895,11 +1895,22 @@ private fun SeriesScreen(
     onPlay: (MediaEntry) -> Unit,
     onFavorite: (MediaEntry) -> Unit,
 ) {
-    val filtered = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) }
+    var selectedShelf by rememberSaveable { mutableStateOf("All") }
+    val shelves = remember(entries) {
+        val providerCategories = entries.map { it.category.trim() }.filter { it.isNotBlank() && !it.equals("Other", true) }.distinct().sortedBy { it.lowercase() }
+        val curated = listOf("Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "Horror", "Mystery", "Romance", "Sci-Fi", "Thriller")
+        val genres = entries.flatMap { it.genre.split(",", "|", "/", "·").map(String::trim) }
+            .mapNotNull { raw -> curated.firstOrNull { it.equals(raw, true) } }.distinct().sorted()
+        listOf("All") + (providerCategories + genres).distinct().filterNot { it.equals("All", true) }
+    }
+    val searched = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) || it.genre.contains(search, true) }
+    val filtered = if (selectedShelf == "All") searched else searched.filter { entry ->
+        entry.category.equals(selectedShelf, true) || entry.genre.split(",", "|", "/", "·").any { it.trim().equals(selectedShelf, true) }
+    }
     val gridState = rememberLazyGridState()
     val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-    LaunchedEffect(lastVisible, entries.size) {
-        if (entries.isNotEmpty() && lastVisible >= gridState.layoutInfo.totalItemsCount - 6) onLoadMore()
+    LaunchedEffect(lastVisible, entries.size, selectedShelf, search) {
+        if (entries.isNotEmpty() && selectedShelf == "All" && search.isBlank() && lastVisible >= gridState.layoutInfo.totalItemsCount - 6) onLoadMore()
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1911,7 +1922,14 @@ private fun SeriesScreen(
             SearchField(search, onSearch, Modifier.width(190.dp))
         }
         if (message.isNotBlank()) Text(message, color = ErrorRed, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(12.dp))
+        if (shelves.size > 1) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 10.dp)) {
+                items(shelves, key = { "series-shelf:$it" }) { shelf ->
+                    CategoryPill(shelf, selectedShelf == shelf) { selectedShelf = shelf }
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(Modifier.weight(1.05f).fillMaxHeight()) {
                 when {
@@ -2159,7 +2177,13 @@ private fun PlaybackDialog(
     val context = androidx.compose.ui.platform.LocalContext.current
     val trackSelector = remember(context) {
         DefaultTrackSelector(context).apply {
-            parameters = buildUponParameters().setAllowAudioMixedMimeTypeAdaptiveness(true).build()
+            // Adapt among provider HLS/DASH variants using measured bandwidth and supported device formats.
+            parameters = buildUponParameters()
+                .setAllowAudioMixedMimeTypeAdaptiveness(true)
+                .setAllowVideoMixedMimeTypeAdaptiveness(true)
+                .setAllowVideoNonSeamlessAdaptiveness(true)
+                .setForceHighestSupportedBitrate(false)
+                .build()
         }
     }
     val renderersFactory = remember(context) { DefaultRenderersFactory(context).setEnableDecoderFallback(true) }
