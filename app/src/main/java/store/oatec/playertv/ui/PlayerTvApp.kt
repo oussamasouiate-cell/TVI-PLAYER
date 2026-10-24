@@ -273,15 +273,28 @@ fun PlayerTvApp() {
         scope.launch {
             try {
                 val page = withContext(Dispatchers.IO) {
+                    // Use the database count and the current displayed page as the
+                    // continuation offset. The query uses the same search predicate,
+                    // so search results continue from the correct row rather than
+                    // restarting or skipping items.
                     val total = mediaCatalogStore.count(source.id, catalogSection.name, search = requestedSearch)
                     if (currentSize.toLong() >= total) emptyList()
-                    else mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = currentSize, search = requestedSearch)
+                    else mediaCatalogStore.page(
+                        source.id, catalogSection.name,
+                        limit = 500, offset = currentSize, search = requestedSearch,
+                    )
                 }
                 if (source.id == activeSourceId && requestedSearch == search && page.isNotEmpty()) {
+                    val combined = when (catalogSection) {
+                        CatalogSection.LIVE -> catalog.liveChannels + page
+                        CatalogSection.MOVIES -> catalog.movies + page
+                        CatalogSection.SERIES -> catalog.series + page
+                    }
+                    val filteredCombined = applyKidsModeFilter(combined, preferences)
                     catalog = when (catalogSection) {
-                        CatalogSection.LIVE -> catalog.copy(liveChannels = applyKidsModeFilter(catalog.liveChannels + page, preferences))
-                        CatalogSection.MOVIES -> catalog.copy(movies = applyKidsModeFilter(catalog.movies + page, preferences))
-                        CatalogSection.SERIES -> catalog.copy(series = applyKidsModeFilter(catalog.series + page, preferences))
+                        CatalogSection.LIVE -> catalog.copy(liveChannels = filteredCombined)
+                        CatalogSection.MOVIES -> catalog.copy(movies = filteredCombined)
+                        CatalogSection.SERIES -> catalog.copy(series = filteredCombined)
                     }
                 }
             } catch (error: Exception) {
