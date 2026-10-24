@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - codespace-vigilant-bassoon-5v5gpp66gvp93pvw9
+      - feature/netflix-fullscreen-movies-series
   workflow_dispatch:
 
 permissions:
