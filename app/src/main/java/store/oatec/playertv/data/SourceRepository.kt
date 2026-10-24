@@ -46,6 +46,9 @@ class SourceRepository {
         section: CatalogSection,
         onBatch: (List<MediaEntry>) -> Unit,
     ): SourceCatalog {
+        if ((source.type == SourceType.M3U || source.type == SourceType.LOCAL_M3U) && section != CatalogSection.LIVE) {
+            return SourceCatalog()
+        }
         if (source.type == SourceType.M3U || source.type == SourceType.LOCAL_M3U) {
             val firstPage = ArrayList<MediaEntry>(DISPLAY_PAGE_SIZE)
             when (source.type) {
@@ -65,7 +68,7 @@ class SourceRepository {
                 SourceType.LOCAL_M3U -> {
                     val file = File(source.serverUrl)
                     require(file.isFile) { "The imported playlist file is missing." }
-                    require(file.length() <= MAX_STREAM_RESPONSE_BYTES) { "The playlist exceeds the 1 GB import limit." }
+                    require(file.length() <= MAX_SOURCE_BYTES) { "The playlist exceeds the 512 MB import limit." }
                     file.inputStream().bufferedReader(Charsets.UTF_8).use { reader ->
                         M3uParser.parseBatched(reader, source.id, DISPLAY_PAGE_SIZE, MAX_CHANNELS) { batch ->
                             if (firstPage.size < DISPLAY_PAGE_SIZE) {
