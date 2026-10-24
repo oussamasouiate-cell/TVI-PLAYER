@@ -1701,7 +1701,7 @@ private fun MediaScreen(
         if (shelves.size > 1) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 10.dp)) {
                 items(shelves, key = { "shelf:$it" }) { shelf ->
-                    CategoryPill(shelf, selectedShelf == shelf) { selectedShelf = shelf; scope@ run { } }
+                    CategoryPill(shelf, selectedShelf == shelf) { selectedShelf = shelf }
                 }
             }
         }
