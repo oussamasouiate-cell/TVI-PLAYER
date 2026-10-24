@@ -1670,10 +1670,12 @@ private fun MediaScreen(
     val shelves = remember(entries, title) {
         val providerCategories = entries.map { it.category.trim() }.filter { it.isNotBlank() && !it.equals("Other", true) }.distinct().sortedBy { it.lowercase() }
         val curated = listOf("Action", "Adventure", "Animation", "Biography", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Music", "Mystery", "Romance", "Sci-Fi", "Sport", "Thriller", "War", "Western")
+        // Always expose the full genre menu, even when a provider omits genre metadata
+        // or a genre only appears on later catalogue pages.
         val knownGenres = entries.flatMap { entry ->
             (entry.genre + "," + entry.title).split(",", "|", "/", "·").map { it.trim() }
-        }.mapNotNull { raw -> curated.firstOrNull { it.equals(raw, true) } }.distinct().sorted()
-        listOf("All") + (providerCategories + knownGenres).distinct().filterNot { it.equals("All", true) }
+        }.mapNotNull { raw -> curated.firstOrNull { it.equals(raw, true) } }.distinct()
+        listOf("All") + (curated + providerCategories + knownGenres).distinct().filterNot { it.equals("All", true) }
     }
     val searched = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) || it.genre.contains(search, true) }
     val filtered = if (selectedShelf == "All") searched else if (selectedShelf in listOf("4K", "UHD", "1080p", "HD")) {
@@ -1685,8 +1687,10 @@ private fun MediaScreen(
     }
     val gridState = rememberLazyGridState()
     val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-    LaunchedEffect(lastVisible, entries.size, selectedShelf, search) {
-        if (entries.isNotEmpty() && selectedShelf == "All" && search.isBlank() && lastVisible >= gridState.layoutInfo.totalItemsCount - 6) onLoadMore()
+    // Fetch every 500-item database page automatically while browsing the full library.
+    // The DB import is already complete; this only fills the UI list in bounded chunks.
+    LaunchedEffect(entries.size, selectedShelf, search, title) {
+        if (entries.isNotEmpty() && selectedShelf == "All" && search.isBlank()) onLoadMore()
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1918,12 +1922,15 @@ private fun SeriesScreen(
         val providerCategories = entries.map { it.category.trim() }.filter { it.isNotBlank() && !it.equals("Other", true) }.distinct().sortedBy { it.lowercase() }
         val curated = listOf("Action", "Adventure", "Animation", "Biography", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Mystery", "Reality", "Romance", "Sci-Fi", "Sport", "Thriller", "War", "Western")
         val genres = entries.flatMap { it.genre.split(",", "|", "/", "·").map(String::trim) }
-            .mapNotNull { raw -> curated.firstOrNull { it.equals(raw, true) } }.distinct().sorted()
-        listOf("All") + (providerCategories + genres).distinct().filterNot { it.equals("All", true) }
+            .mapNotNull { raw -> curated.firstOrNull { it.equals(raw, true) } }.distinct()
+        // Show standard genres even when the source has incomplete metadata.
+        listOf("All") + (curated + providerCategories + genres).distinct().filterNot { it.equals("All", true) }
     }
     val searched = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) || it.genre.contains(search, true) }
     val filtered = if (selectedShelf == "All") searched else searched.filter { entry ->
-        entry.category.equals(selectedShelf, true) || entry.genre.split(",", "|", "/", "·").any { it.trim().equals(selectedShelf, true) }
+        entry.category.equals(selectedShelf, true) ||
+            entry.genre.split(",", "|", "/", "·").any { it.trim().equals(selectedShelf, true) } ||
+            entry.title.contains(selectedShelf, true)
     }
     val gridState = rememberLazyGridState()
     val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
