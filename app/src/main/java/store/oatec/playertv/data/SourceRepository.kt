@@ -46,6 +46,43 @@ class SourceRepository {
         section: CatalogSection,
         onBatch: (List<MediaEntry>) -> Unit,
     ): SourceCatalog {
+        if (source.type == SourceType.M3U || source.type == SourceType.LOCAL_M3U) {
+            val firstPage = ArrayList<MediaEntry>(DISPLAY_PAGE_SIZE)
+            val count = when (source.type) {
+                SourceType.M3U -> withResponse(source.serverUrl, MAX_STREAM_RESPONSE_BYTES) { connection ->
+                    InputStreamReader(
+                        LimitedInputStream(connection.inputStream, MAX_STREAM_RESPONSE_BYTES),
+                        Charsets.UTF_8,
+                    ).use { reader ->
+                        M3uParser.parseBatched(reader, source.id, DISPLAY_PAGE_SIZE, MAX_CHANNELS) { batch ->
+                            if (firstPage.size < DISPLAY_PAGE_SIZE) {
+                                firstPage.addAll(batch.take(DISPLAY_PAGE_SIZE - firstPage.size))
+                            }
+                            onBatch(batch)
+                        }
+                    }
+                }
+                SourceType.LOCAL_M3U -> {
+                    val file = File(source.serverUrl)
+                    require(file.isFile) { "The imported playlist file is missing." }
+                    require(file.length() <= MAX_STREAM_RESPONSE_BYTES) { "The playlist exceeds the 1 GB import limit." }
+                    file.inputStream().bufferedReader(Charsets.UTF_8).use { reader ->
+                        M3uParser.parseBatched(reader, source.id, DISPLAY_PAGE_SIZE, MAX_CHANNELS) { batch ->
+                            if (firstPage.size < DISPLAY_PAGE_SIZE) {
+                                firstPage.addAll(batch.take(DISPLAY_PAGE_SIZE - firstPage.size))
+                            }
+                            onBatch(batch)
+                        }
+                    }
+                }
+                else -> 0
+            }
+            return when (section) {
+                CatalogSection.LIVE -> SourceCatalog(liveChannels = firstPage)
+                CatalogSection.MOVIES -> SourceCatalog(movies = firstPage)
+                CatalogSection.SERIES -> SourceCatalog(series = firstPage)
+            }
+        }
         if (source.type != SourceType.XTREAM) {
             val result = loadCatalog(source, section)
             val entries = when (section) {
@@ -368,12 +405,12 @@ class SourceRepository {
         const val CONNECT_TIMEOUT_MS = 20_000
         // Large IPTV catalogues can take considerably longer than ordinary API calls.
         const val READ_TIMEOUT_MS = 120_000
-        const val MAX_SOURCE_BYTES = 40 * 1024 * 1024
-        const val MAX_STREAM_RESPONSE_BYTES = 256 * 1024 * 1024
+        const val MAX_SOURCE_BYTES = 512 * 1024 * 1024
+        const val MAX_STREAM_RESPONSE_BYTES = 1024 * 1024 * 1024
         const val MAX_CATEGORY_RESPONSE_BYTES = 8 * 1024 * 1024
         const val MAX_SERIES_RESPONSE_BYTES = 4 * 1024 * 1024
-        const val MAX_CHANNELS = 100_000
-        const val MAX_VOD_ITEMS = 100_000
+        const val MAX_CHANNELS = 1_000_000
+        const val MAX_VOD_ITEMS = 1_000_000
         const val MAX_REDIRECTS = 5
         const val INITIAL_STREAM_CAPACITY = 128
         const val DISPLAY_PAGE_SIZE = 500
