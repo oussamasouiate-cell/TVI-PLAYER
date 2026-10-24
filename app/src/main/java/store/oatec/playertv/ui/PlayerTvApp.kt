@@ -1894,6 +1894,7 @@ private fun AddSourceDialog(onDismiss: () -> Unit, onSave: (PlayerSource) -> Uni
     var url by rememberSaveable { mutableStateOf("") }
     var username by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
+    var epgUrl by rememberSaveable { mutableStateOf("") }
     var error by rememberSaveable { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1907,6 +1908,7 @@ private fun AddSourceDialog(onDismiss: () -> Unit, onSave: (PlayerSource) -> Uni
                 }
                 OutlinedTextField(name, { name = it }, label = { Text("Source name") }, singleLine = true)
                 OutlinedTextField(url, { url = it }, label = { Text(if (type == SourceType.M3U.name) "M3U URL" else "Server URL") }, singleLine = true)
+                OutlinedTextField(epgUrl, { epgUrl = it }, label = { Text("EPG XMLTV URL (optional)") }, singleLine = true)
                 if (type == SourceType.XTREAM.name) {
                     OutlinedTextField(username, { username = it }, label = { Text("Username") }, singleLine = true)
                     OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
@@ -1921,6 +1923,7 @@ private fun AddSourceDialog(onDismiss: () -> Unit, onSave: (PlayerSource) -> Uni
                 if (name.isBlank()) error = "Enter a source name."
                 else if (parsed.host.isNullOrBlank() || parsed.scheme !in setOf("http", "https")) error = "Enter a valid HTTP or HTTPS URL."
                 else if (type == SourceType.XTREAM.name && (username.isBlank() || password.isBlank())) error = "Enter the provider username and password."
+                else if (epgUrl.isNotBlank() && (Uri.parse(epgUrl.trim()).host.isNullOrBlank() || Uri.parse(epgUrl.trim()).scheme !in setOf("http", "https"))) error = "Enter a valid HTTP or HTTPS EPG URL."
                 else onSave(
                     PlayerSource(
                         id = UUID.randomUUID().toString(),
@@ -1929,6 +1932,7 @@ private fun AddSourceDialog(onDismiss: () -> Unit, onSave: (PlayerSource) -> Uni
                         serverUrl = url.trim(),
                         username = username.trim(),
                         password = password,
+                        epgUrl = epgUrl.trim(),
                     ),
                 )
             }) { Text("Save") }
