@@ -5,6 +5,7 @@ on:
     branches:
       - codespace-vigilant-bassoon-5v5gpp66gvp93pvw9
       - fix/tvi-player-catalog-ui-player-v2
+      - feature/prompt-full-implementation
   workflow_dispatch:
 
 permissions:
