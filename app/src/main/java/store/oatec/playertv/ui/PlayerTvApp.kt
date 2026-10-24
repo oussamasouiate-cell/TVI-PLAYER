@@ -102,6 +102,10 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import org.videolan.libvlc.LibVLC
+import org.videolan.libvlc.Media
+import org.videolan.libvlc.MediaPlayer
+import org.videolan.libvlc.util.VLCVideoLayout
 import coil.compose.AsyncImage
 import java.io.File
 import java.io.IOException
@@ -2086,7 +2090,6 @@ private fun NumberPadDialog(
     )
 }
 
-@Composable
 private class VlcPlaybackSession(context: Context, streamUrl: String) {
     private val libVlc = LibVLC(context, arrayListOf("--no-drop-late-frames", "--no-skip-frames"))
     val mediaPlayer = MediaPlayer(libVlc)
@@ -2108,6 +2111,7 @@ private class VlcPlaybackSession(context: Context, streamUrl: String) {
     }
 }
 
+@Composable
 private fun PlaybackDialog(
     entry: MediaEntry,
     channels: List<MediaEntry>,
