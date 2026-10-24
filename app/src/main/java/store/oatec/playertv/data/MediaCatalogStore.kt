@@ -238,7 +238,7 @@ class MediaCatalogStore(context: Context) : SQLiteOpenHelper(
         val args = mutableListOf(sourceId, section)
         if (search.isNotBlank()) {
             val pattern = "%${escapeLike(search.trim())}%"
-            where.append(" AND (title LIKE ? ESCAPE '\\\\' OR category LIKE ? ESCAPE '\\\\')")
+            where.append(" AND (title LIKE ? ESCAPE '\\' OR category LIKE ? ESCAPE '\\')")
             args += pattern
             args += pattern
         }
