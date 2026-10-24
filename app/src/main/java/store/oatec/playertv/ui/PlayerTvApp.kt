@@ -399,7 +399,7 @@ fun PlayerTvApp() {
         ) {
             Column(Modifier.fillMaxSize()) {
                 NavigationRail(
-                    selected = currentSection,
+                    selected = if (currentSection == Section.SOURCES) Section.SETTINGS else currentSection,
                     sourceName = activeSource?.name,
                     compact = compactLandscape,
                     onSelect = { section = it.name; selectedCategory = "All"; search = "" },
@@ -1087,6 +1087,7 @@ private fun LiveScreen(
                                 onSelect = {
                                     val selected = item.copy(title = preferences.channelTitle(item.id, item.title))
                                     if (previewChannel?.id == item.id) {
+                                        previewChannel = null
                                         onPlay(selected)
                                     } else {
                                         previewChannel = selected
