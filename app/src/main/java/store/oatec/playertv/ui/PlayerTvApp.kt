@@ -112,6 +112,9 @@ import store.oatec.playertv.data.OatecAboutRepository
 import store.oatec.playertv.data.SecureSourceStore
 import store.oatec.playertv.data.SourceRepository
 import store.oatec.playertv.data.MediaCatalogStore
+import store.oatec.playertv.data.EpgGuideClient
+import store.oatec.playertv.data.EpgProgram
+import store.oatec.playertv.data.EpgRepository
 import store.oatec.playertv.model.MediaEntry
 import store.oatec.playertv.model.MediaKind
 import store.oatec.playertv.model.CatalogSection
@@ -181,6 +184,9 @@ fun PlayerTvApp() {
     var showNumberPad by remember { mutableStateOf(false) }
     var numberInput by rememberSaveable { mutableStateOf("") }
     var selectedChannelId by rememberSaveable { mutableStateOf("") }
+    var epgPrograms by remember(activeSourceId) { mutableStateOf<List<EpgProgram>>(emptyList()) }
+    var epgStatus by remember(activeSourceId) { mutableStateOf("") }
+    var epgClock by remember { mutableStateOf(System.currentTimeMillis()) }
     val scope = rememberCoroutineScope()
     val currentSection = Section.entries.firstOrNull { it.name == section } ?: Section.HOME
 
@@ -287,6 +293,21 @@ fun PlayerTvApp() {
                 loadingMore = false
             }
         }
+    }
+
+    LaunchedEffect(activeSourceId, activeSource?.epgUrl) {
+        epgPrograms = emptyList()
+        epgStatus = ""
+        val guideUrl = activeSource?.epgUrl?.trim().orEmpty()
+        if (guideUrl.isNotEmpty()) {
+            runCatching { withContext(Dispatchers.IO) { EpgGuideClient().fetch(guideUrl) } }
+                .onSuccess { programs -> epgPrograms = programs; epgStatus = if (programs.isEmpty()) "No programmes found in EPG guide." else "TV guide loaded: ${programs.size} programmes." }
+                .onFailure { error -> epgStatus = "TV guide unavailable: ${error.message ?: "download failed"}" }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) { delay(60_000); epgClock = System.currentTimeMillis() }
     }
 
     LaunchedEffect(activeSourceId) {
@@ -487,6 +508,9 @@ fun PlayerTvApp() {
                         Section.HOME -> Unit // HomeDashboard is rendered above this content switch.
                         Section.LIVE -> LiveScreen(
                             catalog = catalog,
+                            epgPrograms = epgPrograms,
+                            epgClock = epgClock,
+                            epgStatus = epgStatus,
                             category = selectedCategory,
                             search = search,
                             preferences = preferences,
@@ -1428,6 +1452,9 @@ private fun SearchField(value: String, onValue: (String) -> Unit, modifier: Modi
 @Composable
 private fun LiveScreen(
     catalog: SourceCatalog,
+    epgPrograms: List<EpgProgram>,
+    epgClock: Long,
+    epgStatus: String,
     category: String,
     search: String,
     preferences: PlayerPreferences,
@@ -1476,6 +1503,9 @@ private fun LiveScreen(
             Text("CATEGORY", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(150.dp))
             Text("ACTIONS", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
+        if (epgStatus.isNotBlank()) {
+            Text(epgStatus, color = TextMuted, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
         HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
         when {
             busy && catalog.liveChannels.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -1497,6 +1527,8 @@ private fun LiveScreen(
                         favorite = item.id in preferences.favorites(),
                         hidden = item.id in preferences.hiddenChannels(),
                         category = preferences.categoryFor(item.id, item.category),
+                        currentProgram = EpgRepository.currentProgram(epgPrograms, item.epgChannelId, epgClock),
+                        nextProgram = EpgRepository.nextProgram(epgPrograms, item.epgChannelId, epgClock),
                         onSelect = { onPlay(item.copy(title = preferences.channelTitle(item.id, item.title))) },
                         onPlay = { onPlay(item.copy(title = preferences.channelTitle(item.id, item.title))) },
                         onFavorite = { onFavorite(item) },
@@ -1515,6 +1547,8 @@ private fun ChannelRow(
     favorite: Boolean,
     hidden: Boolean,
     category: String,
+    currentProgram: EpgProgram?,
+    nextProgram: EpgProgram?,
     onSelect: () -> Unit,
     onPlay: () -> Unit,
     onFavorite: () -> Unit,
@@ -1540,7 +1574,13 @@ private fun ChannelRow(
             }
             Column(Modifier.weight(1f)) {
                 Text(entry.title, color = TextMain, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(category, color = TextMuted, fontSize = 10.sp, maxLines = 1)
+                val programmeLine = when {
+                    currentProgram != null && nextProgram != null -> "NOW: ${currentProgram.title}  ·  NEXT: ${nextProgram.title}"
+                    currentProgram != null -> "NOW: ${currentProgram.title}"
+                    nextProgram != null -> "NEXT: ${nextProgram.title}"
+                    else -> category
+                }
+                Text(programmeLine, color = if (currentProgram != null) GoldLight else TextMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             TextButton(onClick = onFavorite) { Text(if (favorite) "Saved" else "+ Fav", color = Lime, fontSize = 11.sp) }
             TextButton(onClick = onOrganize) { Text("Edit", color = TextMuted, fontSize = 11.sp) }
