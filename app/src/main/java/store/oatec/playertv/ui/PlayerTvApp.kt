@@ -1164,6 +1164,7 @@ private fun MediaScreen(
     preferences: PlayerPreferences, onBackHome: () -> Unit,
     onPlay: (MediaEntry) -> Unit, onFavorite: (MediaEntry) -> Unit,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val filtered = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) }
     var featuredId by remember(entries) { mutableStateOf(entries.firstOrNull()?.id.orEmpty()) }
     val featured = filtered.firstOrNull { it.id == featuredId } ?: filtered.firstOrNull()
@@ -1188,6 +1189,10 @@ private fun MediaScreen(
                         if (movie.description.isNotBlank()) Text(movie.description, color = TextMain.copy(alpha = 0.88f), fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Button(onClick = { onPlay(movie) }, colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Ink)) { Text("▶  Play") }
+                            OutlinedButton(onClick = {
+                                val query = Uri.encode(movie.title + " official trailer")
+                                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=" + query))) }
+                            }) { Text("▷  Trailer", color = TextMain) }
                             OutlinedButton(onClick = { onFavorite(movie) }) { Text(if (movie.id in preferences.favorites()) "♥ Saved" else "＋ My List", color = TextMain) }
                         }
                     }
@@ -1336,6 +1341,7 @@ private fun SeriesScreen(
     onBackHome: () -> Unit, onSelect: (MediaEntry) -> Unit,
     onPlay: (MediaEntry) -> Unit, onFavorite: (MediaEntry) -> Unit,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val filtered = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) }
     var featuredId by remember(entries) { mutableStateOf(entries.firstOrNull()?.id.orEmpty()) }
     val featured = filtered.firstOrNull { it.id == featuredId } ?: selectedSeries ?: filtered.firstOrNull()
@@ -1360,6 +1366,10 @@ private fun SeriesScreen(
                         if (series.description.isNotBlank()) Text(series.description, color = TextMain.copy(alpha = 0.88f), fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Button(onClick = { featuredId = series.id; onSelect(series) }, colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Ink)) { Text("▶  Seasons & Episodes") }
+                            OutlinedButton(onClick = {
+                                val query = Uri.encode(series.title + " official trailer")
+                                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=" + query))) }
+                            }) { Text("▷  Trailer", color = TextMain) }
                             OutlinedButton(onClick = { onFavorite(series) }) { Text(if (series.id in preferences.favorites()) "♥ Saved" else "＋ My List", color = TextMain) }
                         }
                     }
