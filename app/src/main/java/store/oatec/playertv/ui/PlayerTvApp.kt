@@ -12,6 +12,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -532,6 +537,8 @@ fun PlayerTvApp() {
                             search = search,
                             preferences = preferences,
                             preferenceRevision = preferenceRevision,
+                            onSearch = { search = it },
+                            onHome = { section = Section.HOME.name; selectedCategory = "All"; search = "" },
                             message = message,
                             busy = busy,
                             onCategory = { selectedCategory = it },
@@ -1451,133 +1458,101 @@ private fun LiveScreen(
     message: String,
     busy: Boolean,
     onCategory: (String) -> Unit,
+    onSearch: (String) -> Unit,
+    onHome: () -> Unit,
     onLoadMore: () -> Unit,
     onPlay: (MediaEntry) -> Unit,
     onFavorite: (MediaEntry) -> Unit,
     onOrganize: (MediaEntry) -> Unit,
     onHide: (MediaEntry) -> Unit,
 ) {
-    // Receiver-style channel list: no promotional hero, fake preview panel, or
-    // intermediate "choose a channel" screen. Selecting a channel plays it.
     val channels = remember(catalog.liveChannels, category, search, preferenceRevision) {
         visibleChannels(catalog, category, search, preferences)
     }
-    val channelListState = rememberLazyListState()
-    val lastChannelVisible = channelListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-    LaunchedEffect(lastChannelVisible, channels.size) {
-        if (channels.isNotEmpty() && lastChannelVisible >= channels.size - 10) onLoadMore()
-    }
+    var selectedChannel by remember(channels) { mutableStateOf(channels.firstOrNull()) }
     val categories = remember(catalog.liveChannels, preferenceRevision) {
-        (listOf("All", "Favorites", "Hidden") +
-            catalog.liveChannels.map { preferences.categoryFor(it.id, it.category) }.distinct().sorted() +
-            preferences.customCategories()).distinct()
+        (listOf("All", "Favorites", "Hidden") + catalog.liveChannels.map { preferences.categoryFor(it.id, it.category) }.distinct().sorted() + preferences.customCategories()).distinct()
     }
-    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 8.dp)) {
-        if (categories.isNotEmpty()) {
-            LazyRow(
-                Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(categories, key = { it }) { item ->
-                    CategoryPill(item, category == item) { onCategory(item) }
-                }
-            }
-        }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("CH", color = GoldLight, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(54.dp))
-            Text("CHANNEL", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Text("CATEGORY", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(150.dp))
-            Text("ACTIONS", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        }
-        if (epgStatus.isNotBlank()) {
-            Text(epgStatus, color = TextMuted, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
-        when {
-            busy && catalog.liveChannels.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                LoadingState("Loading channels")
-            }
-            channels.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                EmptyState("No channels available", message.ifBlank { "Add or refresh an IPTV source to load channels." })
-            }
-            else -> LazyColumn(
-                state = channelListState,
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-                contentPadding = PaddingValues(top = 6.dp, bottom = 18.dp),
-            ) {
-                itemsIndexed(channels, key = { _, item -> item.id }) { _, item ->
-                    ChannelRow(
-                        number = channelNumber(item, catalog.liveChannels, preferences),
-                        entry = item.copy(title = preferences.channelTitle(item.id, item.title)),
-                        favorite = item.id in preferences.favorites(),
-                        hidden = item.id in preferences.hiddenChannels(),
-                        category = preferences.categoryFor(item.id, item.category),
-                        currentProgram = EpgRepository.currentProgram(epgPrograms, item.epgChannelId, epgClock),
-                        nextProgram = EpgRepository.nextProgram(epgPrograms, item.epgChannelId, epgClock),
-                        onSelect = { onPlay(item.copy(title = preferences.channelTitle(item.id, item.title))) },
-                        onPlay = { onPlay(item.copy(title = preferences.channelTitle(item.id, item.title))) },
-                        onFavorite = { onFavorite(item) },
-                        onOrganize = { onOrganize(item) },
-                        onHide = { onHide(item) },
-                    )
-                }
-            }
-        }
+    val listState = rememberLazyGridState()
+    val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+    LaunchedEffect(lastVisible, channels.size) {
+        if (channels.isNotEmpty() && lastVisible >= channels.size - 10) onLoadMore()
     }
-}
-@Composable
-private fun ChannelRow(
-    number: Int,
-    entry: MediaEntry,
-    favorite: Boolean,
-    hidden: Boolean,
-    category: String,
-    currentProgram: EpgProgram?,
-    nextProgram: EpgProgram?,
-    onSelect: () -> Unit,
-    onPlay: () -> Unit,
-    onFavorite: () -> Unit,
-    onOrganize: () -> Unit,
-    onHide: () -> Unit,
-) {
-    var focused by remember { mutableStateOf(false) }
-    Surface(
-        color = if (focused) Raised else Panel,
-        shape = RoundedCornerShape(12.dp),
-        border = if (focused) BorderStroke(1.dp, Lime) else null,
-        modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }.focusable().clickable { onSelect() },
-    ) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(number.toString().padStart(3, '0'), color = Lime, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(42.dp))
-            if (entry.logoUrl.isNotBlank()) {
-                AsyncImage(entry.logoUrl, contentDescription = null, modifier = Modifier.size(34.dp).padding(end = 8.dp))
-            } else {
-                Box(Modifier.size(28.dp).background(Raised, RoundedCornerShape(6.dp)), contentAlignment = Alignment.Center) {
-                    Text(entry.title.firstOrNull()?.uppercase() ?: "-", color = Lime, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.width(10.dp))
+    Row(Modifier.fillMaxSize().background(Ink)) {
+        Column(Modifier.weight(1.6f).fillMaxHeight().padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("LIVE TV", color = Lime, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Spacer(Modifier.weight(1f))
+                OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) { Text("⌂ Home", fontSize = 11.sp) }
             }
-            Column(Modifier.weight(1f)) {
-                Text(entry.title, color = TextMain, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val programmeLine = when {
-                    currentProgram != null && nextProgram != null -> "NOW: ${currentProgram.title}  ·  NEXT: ${nextProgram.title}"
-                    currentProgram != null -> "NOW: ${currentProgram.title}"
-                    nextProgram != null -> "NEXT: ${nextProgram.title}"
-                    else -> category
-                }
-                Text(programmeLine, color = if (currentProgram != null) GoldLight else TextMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            OutlinedTextField(
+                value = search, onValueChange = onSearch, modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp),
+                singleLine = true, placeholder = { Text("Search channels…", color = TextMuted) },
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = TextMain), shape = RoundedCornerShape(10.dp),
+            )
+            LazyRow(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(categories, key = { it }) { item -> CategoryPill(item, category == item) { onCategory(item) } }
             }
-            TextButton(onClick = onFavorite) { Text(if (favorite) "Saved" else "+ Fav", color = Lime, fontSize = 11.sp) }
-            TextButton(onClick = onOrganize) { Text("Edit", color = TextMuted, fontSize = 11.sp) }
-            TextButton(onClick = onHide) { Text(if (hidden) "Restore" else "Delete", color = if (hidden) TextMuted else ErrorRed, fontSize = 11.sp) }
+            when {
+                busy && catalog.liveChannels.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingState("Loading channels") }
+                channels.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { EmptyState("No channels available", message.ifBlank { "Add or refresh an IPTV source to load channels." }) }
+                else -> LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 130.dp), state = listState, modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    gridItems(channels, key = { it.id }) { item ->
+                        val selected = selectedChannel?.id == item.id
+                        Surface(
+                            color = if (selected) Raised else Panel, shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) Lime else Color.White.copy(alpha = 0.08f)),
+                            modifier = Modifier.fillMaxWidth().height(86.dp).combinedClickable(
+                                onClick = { selectedChannel = item },
+                                onDoubleClick = { onPlay(item.copy(title = preferences.channelTitle(item.id, item.title))) },
+                            ),
+                        ) {
+                            Row(Modifier.padding(7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Box(Modifier.size(40.dp).background(Color.Black, RoundedCornerShape(7.dp)), contentAlignment = Alignment.Center) {
+                                    if (item.logoUrl.isNotBlank()) AsyncImage(item.logoUrl, contentDescription = item.title, modifier = Modifier.fillMaxSize().padding(2.dp))
+                                    else Text(channelNumber(item, catalog.liveChannels, preferences).toString(), color = Lime, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                                }
+                                Column(Modifier.weight(1f)) {
+                                    Text(channelNumber(item, catalog.liveChannels, preferences).toString().padStart(3, '0'), color = Lime, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Text(preferences.channelTitle(item.id, item.title), color = TextMain, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Column(Modifier.weight(1f).fillMaxHeight().padding(start = 8.dp, end = 14.dp, top = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("CHANNEL PREVIEW", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Surface(Modifier.fillMaxWidth().weight(1f), color = Panel, shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Lime.copy(alpha = 0.35f))) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+                        val preview = selectedChannel
+                        if (preview != null && preview.logoUrl.isNotBlank()) AsyncImage(preview.logoUrl, contentDescription = preview.title, modifier = Modifier.size(90.dp))
+                        else Text("TV", color = Lime, fontSize = 42.sp, fontWeight = FontWeight.Black)
+                    }
+                    Text(selectedChannel?.let { preferences.channelTitle(it.id, it.title) } ?: "Select a channel", color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 2)
+                    selectedChannel?.let { item ->
+                        Text("CH " + channelNumber(item, catalog.liveChannels, preferences).toString().padStart(3, '0') + " • " + preferences.categoryFor(item.id, item.category), color = TextMuted, fontSize = 10.sp)
+                        val current = EpgRepository.currentProgram(epgPrograms, item.epgChannelId, epgClock)
+                        val next = EpgRepository.nextProgram(epgPrograms, item.epgChannelId, epgClock)
+                        Text(current?.title?.let { "NOW  " + it } ?: next?.title?.let { "NEXT  " + it } ?: "Programme information unavailable", color = GoldLight, fontSize = 11.sp, maxLines = 2)
+                        Button(onClick = { onPlay(item.copy(title = preferences.channelTitle(item.id, item.title))) }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Ink)) { Text("Watch full screen") }
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = { onFavorite(item) }) { Text(if (item.id in preferences.favorites()) "★ Saved" else "☆ Favorite", color = Lime) }
+                            TextButton(onClick = { onOrganize(item) }) { Text("Edit", color = TextMuted) }
+                            TextButton(onClick = { onHide(item) }) { Text(if (item.id in preferences.hiddenChannels()) "Restore" else "Hide", color = TextMuted) }
+                        }
+                    }
+                }
+            }
+            if (epgStatus.isNotBlank()) Text(epgStatus, color = TextMuted, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }
-
 @Composable
 private fun CategoryPill(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
