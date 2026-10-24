@@ -9,10 +9,8 @@ import android.view.KeyEvent as AndroidKeyEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -1086,7 +1084,14 @@ private fun LiveScreen(
                                 favorite = item.id in preferences.favorites(),
                                 hidden = item.id in preferences.hiddenChannels(),
                                 category = preferences.categoryFor(item.id, item.category),
-                                onSelect = { previewChannel = item.copy(title = preferences.channelTitle(item.id, item.title)) },
+                                onSelect = {
+                                    val selected = item.copy(title = preferences.channelTitle(item.id, item.title))
+                                    if (previewChannel?.id == item.id) {
+                                        onPlay(selected)
+                                    } else {
+                                        previewChannel = selected
+                                    }
+                                },
                                 onPlay = { onPlay(item.copy(title = preferences.channelTitle(item.id, item.title))) },
                                 onFavorite = { onFavorite(item) },
                                 onOrganize = { onOrganize(item) },
@@ -1148,7 +1153,6 @@ private fun LiveScreen(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChannelRow(
     number: Int,
@@ -1167,8 +1171,7 @@ private fun ChannelRow(
         color = if (focused) Raised else Panel,
         shape = RoundedCornerShape(12.dp),
         border = if (focused) BorderStroke(1.dp, Lime) else null,
-        modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }.focusable()
-            .combinedClickable(onClick = onSelect, onDoubleClick = onPlay),
+        modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }.focusable().clickable { onSelect() },
     ) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(number.toString().padStart(3, '0'), color = Lime, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(42.dp))
