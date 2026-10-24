@@ -194,8 +194,10 @@ class MediaCatalogStore(context: Context) : SQLiteOpenHelper(
             args += category
         }
         if (search.isNotBlank()) {
-            where.append(" AND title LIKE ? ESCAPE '\\'")
-            args += "%${escapeLike(search.trim())}%"
+            val pattern = "%${escapeLike(search.trim())}%"
+            where.append(" AND (title LIKE ? ESCAPE '\\' OR category LIKE ? ESCAPE '\\')")
+            args += pattern
+            args += pattern
         }
         val results = ArrayList<MediaEntry>(limit)
         readableDatabase.query(
