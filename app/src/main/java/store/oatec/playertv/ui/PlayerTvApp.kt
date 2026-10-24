@@ -84,6 +84,16 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import java.io.File
 import java.io.IOException
@@ -1960,15 +1970,63 @@ private fun PlaybackDialog(
     onPlay: (MediaEntry) -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var loading by remember(entry.id) { mutableStateOf(true) }
-    var error by remember(entry.id) { mutableStateOf("") }
+    val trackSelector = remember(context) {
+        DefaultTrackSelector(context).apply {
+            parameters = buildUponParameters().setAllowAudioMixedMimeTypeAdaptiveness(true).build()
+        }
+    }
+    val renderersFactory = remember(context) { DefaultRenderersFactory(context).setEnableDecoderFallback(true) }
+    val player = remember(context) {
+        ExoPlayer.Builder(context, renderersFactory).setTrackSelector(trackSelector).build().apply {
+            val attrs = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build()
+            setAudioAttributes(attrs, true)
+            volume = 1f
+        }
+    }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf("") }
     var showList by remember { mutableStateOf(false) }
     val channelIndex = channels.indexOfFirst { it.id == entry.id }
     val latestEntry by rememberUpdatedState(entry)
+    val latestPreferences by rememberUpdatedState(preferences)
 
-    DisposableEffect(entry.id) {
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                loading = playbackState == Player.STATE_BUFFERING || playbackState == Player.STATE_IDLE
+            }
+            override fun onPlayerError(playbackException: PlaybackException) {
+                loading = false
+                error = playbackException.localizedMessage ?: "ExoPlayer couldn't play this stream. Check the URL and stream format."
+                if (latestEntry.kind != MediaKind.LIVE && latestPreferences.resumePlayback()) {
+                    latestPreferences.saveProgress(latestEntry.id, player.currentPosition.coerceAtLeast(0L))
+                }
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            if (latestEntry.kind != MediaKind.LIVE && latestPreferences.resumePlayback()) {
+                latestPreferences.saveProgress(latestEntry.id, player.currentPosition.coerceAtLeast(0L))
+            }
+            player.stop()
+            player.removeListener(listener)
+            player.release()
+        }
+    }
+
+    LaunchedEffect(entry.id) {
+        error = ""
+        loading = true
         if (entry.kind != MediaKind.LIVE) preferences.recordWatched(entry.id)
-        onDispose { }
+        player.stop()
+        player.clearMediaItems()
+        player.setMediaItem(MediaItem.fromUri(entry.streamUrl))
+        player.prepare()
+        if (entry.kind != MediaKind.LIVE && preferences.resumePlayback()) {
+            val position = preferences.progress(entry.id)
+            if (position > 5_000L) player.seekTo(position)
+        }
+        player.playWhenReady = true
     }
 
     Dialog(
@@ -1999,37 +2057,14 @@ private fun PlaybackDialog(
         ) {
             AndroidView(
                 factory = { viewContext ->
-                    android.widget.VideoView(viewContext).apply {
-                        setOnPreparedListener { mediaPlayer ->
-                            loading = false
-                            error = ""
-                            mediaPlayer.setOnVideoSizeChangedListener { mp, _, _ ->
-                                // The platform player chooses the available decoder and video size.
-                            }
-                            start()
-                        }
-                        setOnErrorListener { _, what, extra ->
-                            loading = false
-                            error = "Android player couldn't play this stream (error $what/$extra). This format or stream may not be supported by your device."
-                            true
-                        }
-                        setOnInfoListener { _, what, _ ->
-                            if (what == android.media.MediaPlayer.MEDIA_INFO_BUFFERING_START) loading = true
-                            if (what == android.media.MediaPlayer.MEDIA_INFO_BUFFERING_END) loading = false
-                            true
-                        }
-                        setVideoURI(Uri.parse(entry.streamUrl))
-                        setKeepScreenOn(true)
+                    PlayerView(viewContext).apply {
+                        this.player = player
+                        useController = true
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        keepScreenOn = true
                     }
                 },
-                update = { video ->
-                    if (video.tag != entry.id) {
-                        video.tag = entry.id
-                        loading = true
-                        error = ""
-                        video.setVideoURI(Uri.parse(entry.streamUrl))
-                    }
-                },
+                update = { it.player = player },
                 modifier = Modifier.fillMaxSize(),
             )
             if (entry.kind == MediaKind.LIVE) {
@@ -2056,10 +2091,7 @@ private fun PlaybackDialog(
                 ) {
                     Text("Playback unavailable", color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     Text(error, color = TextMuted, modifier = Modifier.padding(top = 6.dp, bottom = 12.dp))
-                    Button(onClick = {
-                        error = ""
-                        loading = true
-                    }) { Text("Retry") }
+                    Button(onClick = { error = ""; loading = true; player.prepare(); player.play() }) { Text("Retry") }
                 }
             }
             if (showList) {
