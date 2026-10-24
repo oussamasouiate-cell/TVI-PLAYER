@@ -124,8 +124,62 @@ class PlayerPreferences(context: Context) {
         return number
     }
 
+    /** Kids Mode is device-local. The PIN is stored as a SHA-256 digest, never as plain text. */
+    fun kidsModeEnabled(): Boolean = preferences.getBoolean(KIDS_MODE_ENABLED_KEY, false)
+
+    fun setKidsModeEnabled(enabled: Boolean): Boolean {
+        if (enabled && !hasKidsPin()) return false
+        preferences.edit().putBoolean(KIDS_MODE_ENABLED_KEY, enabled).apply()
+        return true
+    }
+
+    fun hasKidsPin(): Boolean = !preferences.getString(KIDS_PIN_HASH_KEY, null).isNullOrBlank()
+
+    fun setKidsPin(pin: String): Boolean {
+        val normalized = pin.trim()
+        if (normalized.length !in 4..8 || normalized.any { !it.isDigit() }) return false
+        preferences.edit()
+            .putString(KIDS_PIN_HASH_KEY, pinDigest(normalized))
+            .putBoolean(KIDS_MODE_ENABLED_KEY, true)
+            .apply()
+        return true
+    }
+
+    fun verifyKidsPin(pin: String): Boolean {
+        val saved = preferences.getString(KIDS_PIN_HASH_KEY, null) ?: return false
+        return java.security.MessageDigest.isEqual(
+            saved.toByteArray(Charsets.UTF_8),
+            pinDigest(pin.trim()).toByteArray(Charsets.UTF_8),
+        )
+    }
+
+    fun changeKidsPin(currentPin: String, newPin: String): Boolean {
+        if (!verifyKidsPin(currentPin)) return false
+        val normalized = newPin.trim()
+        if (normalized.length !in 4..8 || normalized.any { !it.isDigit() }) return false
+        preferences.edit().putString(KIDS_PIN_HASH_KEY, pinDigest(normalized)).apply()
+        return true
+    }
+
+    fun clearKidsPin(currentPin: String): Boolean {
+        if (!verifyKidsPin(currentPin)) return false
+        preferences.edit()
+            .remove(KIDS_PIN_HASH_KEY)
+            .putBoolean(KIDS_MODE_ENABLED_KEY, false)
+            .apply()
+        return true
+    }
+
+    private fun pinDigest(pin: String): String {
+        val bytes = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(pin.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+
     private companion object {
         const val FAVORITES_KEY = "favorite_ids"
+        const val KIDS_MODE_ENABLED_KEY = "kids_mode_enabled"
+        const val KIDS_PIN_HASH_KEY = "kids_pin_sha256"
         const val NEXT_CHANNEL_NUMBER_KEY = "next_channel_number"
         const val CATEGORIES_KEY = "custom_categories"
         const val HIDDEN_KEY = "hidden_channels"
