@@ -2750,10 +2750,12 @@ private fun KidsDashboard(
         }
         source.filter { search.isBlank() || it.title.contains(search, ignoreCase = true) || it.category.contains(search, ignoreCase = true) }
     }
-    Column(
-        Modifier.fillMaxSize().background(Color(0xFF071522)).padding(if (compact) 12.dp else 24.dp),
-        verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 14.dp),
-    ) {
+    Box(Modifier.fillMaxSize().background(Color(0xFF071522))) {
+        KidsBackgroundDoodles(compact = compact)
+        Column(
+            Modifier.fillMaxSize().padding(if (compact) 12.dp else 24.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 14.dp),
+        ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f)) {
                 Text("TVI KIDS", color = Color(0xFF74D7FF), fontSize = if (compact) 22.sp else 32.sp, fontWeight = FontWeight.Black)
@@ -2824,6 +2826,23 @@ private fun KidsDashboard(
                 }
             }
         }
+        }
+    }
+}
+
+@Composable
+private fun KidsBackgroundDoodles(compact: Boolean) {
+    // Decorative, low-contrast cartoon-style doodles stay behind all interactive content.
+    val size = if (compact) 34.sp else 52.sp
+    Box(Modifier.fillMaxSize()) {
+        Text("🐭", modifier = Modifier.align(Alignment.TopEnd).padding(end = 22.dp, top = 62.dp), fontSize = size, color = Color.White.copy(alpha = 0.13f))
+        Text("🦄", modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp, top = 36.dp), fontSize = size, color = Color.White.copy(alpha = 0.12f))
+        Text("🐻", modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 50.dp), fontSize = size, color = Color.White.copy(alpha = 0.12f))
+        Text("🚀", modifier = Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 38.dp), fontSize = size, color = Color.White.copy(alpha = 0.13f))
+        Text("🌈", modifier = Modifier.align(Alignment.TopStart).padding(start = 14.dp, top = 92.dp), fontSize = size, color = Color.White.copy(alpha = 0.10f))
+        Text("⭐", modifier = Modifier.align(Alignment.CenterEnd).padding(end = 24.dp, bottom = 46.dp), fontSize = size, color = Color.White.copy(alpha = 0.12f))
+        Text("🐼", modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp, end = 150.dp), fontSize = size, color = Color.White.copy(alpha = 0.10f))
+        Text("🦊", modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp, start = 190.dp), fontSize = size, color = Color.White.copy(alpha = 0.10f))
     }
 }
 
