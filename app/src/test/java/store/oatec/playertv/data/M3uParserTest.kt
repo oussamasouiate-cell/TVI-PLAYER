@@ -53,7 +53,7 @@ class M3uParserTest {
             "source-1",
             batchSize = 2,
             maxChannels = 10,
-            onBatch = batches::add,
+            onBatch = { batch -> batches.add(batch) },
         )
 
         assertEquals(3, count)
