@@ -2072,6 +2072,27 @@ private fun NumberPadDialog(
 }
 
 @Composable
+private class VlcPlaybackSession(context: Context, streamUrl: String) {
+    private val libVlc = LibVLC(context, arrayListOf("--no-drop-late-frames", "--no-skip-frames"))
+    val mediaPlayer = MediaPlayer(libVlc)
+    val videoLayout = VLCVideoLayout(context)
+
+    init {
+        mediaPlayer.attachViews(videoLayout, null, false, false)
+        val media = Media(libVlc, Uri.parse(streamUrl))
+        mediaPlayer.media = media
+        media.release()
+        mediaPlayer.play()
+    }
+
+    fun release() {
+        runCatching { mediaPlayer.stop() }
+        runCatching { mediaPlayer.detachViews() }
+        runCatching { mediaPlayer.release() }
+        runCatching { libVlc.release() }
+    }
+}
+
 private fun PlaybackDialog(
     entry: MediaEntry,
     channels: List<MediaEntry>,
@@ -2096,6 +2117,13 @@ private fun PlaybackDialog(
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
     var showList by remember { mutableStateOf(false) }
+    var activeEngine by remember(entry.id) { mutableStateOf(preferences.playbackEngine()) }
+    val vlcSession = remember(context, entry.id, activeEngine) {
+        if (activeEngine == "libvlc") runCatching { VlcPlaybackSession(context, entry.streamUrl) }.getOrNull() else null
+    }
+    DisposableEffect(vlcSession) {
+        onDispose { vlcSession?.release() }
+    }
     val channelIndex = channels.indexOfFirst { it.id == entry.id }
     val latestEntry by rememberUpdatedState(entry)
     val latestPreferences by rememberUpdatedState(preferences)
@@ -2108,6 +2136,11 @@ private fun PlaybackDialog(
             override fun onPlayerError(playbackException: PlaybackException) {
                 loading = false
                 error = playbackException.localizedMessage ?: "ExoPlayer couldn't play this stream. Check the URL and stream format."
+                if (latestPreferences.playbackEngine() == "auto" && activeEngine == "auto") {
+                    activeEngine = "libvlc"
+                    error = ""
+                    loading = true
+                }
                 if (latestEntry.kind != MediaKind.LIVE && latestPreferences.resumePlayback()) {
                     latestPreferences.saveProgress(latestEntry.id, player.currentPosition.coerceAtLeast(0L))
                 }
@@ -2165,18 +2198,29 @@ private fun PlaybackDialog(
                 }
             },
         ) {
-            AndroidView(
-                factory = { viewContext ->
-                    PlayerView(viewContext).apply {
-                        this.player = player
-                        useController = true
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                        keepScreenOn = true
-                    }
-                },
-                update = { it.player = player },
-                modifier = Modifier.fillMaxSize(),
-            )
+            if (activeEngine == "libvlc") {
+                if (vlcSession != null) {
+                    AndroidView(
+                        factory = { vlcSession.videoLayout },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Text("LibVLC could not start for this stream.", color = ErrorRed, modifier = Modifier.align(Alignment.Center))
+                }
+            } else {
+                AndroidView(
+                    factory = { viewContext ->
+                        PlayerView(viewContext).apply {
+                            this.player = player
+                            useController = true
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                            keepScreenOn = true
+                        }
+                    },
+                    update = { it.player = player },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             if (entry.kind == MediaKind.LIVE) {
                 Column(
                     Modifier.align(Alignment.TopStart).padding(24.dp)
@@ -2201,7 +2245,21 @@ private fun PlaybackDialog(
                 ) {
                     Text("Playback unavailable", color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     Text(error, color = TextMuted, modifier = Modifier.padding(top = 6.dp, bottom = 12.dp))
-                    Button(onClick = { error = ""; loading = true; player.prepare(); player.play() }) { Text("Retry") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            error = ""
+                            loading = true
+                            if (activeEngine == "libvlc") {
+                                activeEngine = "exoplayer"
+                            } else {
+                                player.prepare()
+                                player.play()
+                            }
+                        }) { Text(if (activeEngine == "libvlc") "Try ExoPlayer" else "Retry") }
+                        if (activeEngine != "libvlc") {
+                            OutlinedButton(onClick = { error = ""; loading = true; activeEngine = "libvlc" }) { Text("Try VLC") }
+                        }
+                    }
                 }
             }
             if (showList) {
