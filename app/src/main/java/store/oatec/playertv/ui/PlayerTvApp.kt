@@ -85,6 +85,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -1637,7 +1638,14 @@ private fun PlaybackDialog(
         ExoPlayer.Builder(context, renderersFactory)
             .setTrackSelector(trackSelector)
             .build()
-            .apply { setAudioAttributes(AudioAttributes.DEFAULT, true) }
+            .apply {
+                val mediaAudioAttributes = AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .build()
+                setAudioAttributes(mediaAudioAttributes, true)
+                volume = 1f
+            }
     }
     var vlcSession by remember { mutableStateOf<VlcPlaybackSession?>(null) }
     var useVlc by rememberSaveable { mutableStateOf(false) }
