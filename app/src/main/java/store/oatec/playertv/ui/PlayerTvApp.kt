@@ -434,6 +434,7 @@ fun PlayerTvApp() {
                     )
                     HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
                     when (currentSection) {
+                        Section.HOME -> Unit // HomeDashboard is rendered above this content switch.
                         Section.LIVE -> LiveScreen(
                             catalog = catalog,
                             category = selectedCategory,
