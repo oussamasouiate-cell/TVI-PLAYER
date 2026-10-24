@@ -84,20 +84,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.MediaItem
-import androidx.media3.common.AudioAttributes
-import androidx.media3.common.C
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
-import org.videolan.libvlc.LibVLC
-import org.videolan.libvlc.MediaPlayer as VlcMediaPlayer
-import org.videolan.libvlc.util.VLCVideoLayout
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -131,14 +118,6 @@ private val TextMain = Color(0xFFF7F7F5)
 private val TextMuted = Color(0xFF9DA5B1)
 private val ErrorRed = Color(0xFFFF8177)
 private const val CHANNEL_INFO_DURATION_MS = 5_000L
-
-private data class VlcPlaybackSession(
-    val libVlc: LibVLC,
-    val player: VlcMediaPlayer,
-    val videoLayout: VLCVideoLayout,
-)
-
-private data class VlcAudioTrack(val id: Int, val name: String)
 
 private enum class Section(val label: String) {
     HOME("Home"), LIVE("Live TV"), MOVIES("Movies"), SERIES("Series"), SOURCES("Sources"), SETTINGS("Settings"),
@@ -1981,226 +1960,15 @@ private fun PlaybackDialog(
     onPlay: (MediaEntry) -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val trackSelector = remember(context) {
-        DefaultTrackSelector(context).apply {
-            parameters = buildUponParameters()
-                .setAllowAudioMixedMimeTypeAdaptiveness(true)
-                .build()
-        }
-    }
-    val renderersFactory = remember(context) {
-        DefaultRenderersFactory(context).setEnableDecoderFallback(true)
-    }
-    val player = remember(context) {
-        ExoPlayer.Builder(context, renderersFactory)
-            .setTrackSelector(trackSelector)
-            .build()
-            .apply {
-                val mediaAudioAttributes = AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
-                    .build()
-                setAudioAttributes(mediaAudioAttributes, true)
-                volume = 1f
-            }
-    }
-    var vlcSession by remember { mutableStateOf<VlcPlaybackSession?>(null) }
-    var useVlc by rememberSaveable { mutableStateOf(false) }
-    var vlcPlaying by remember { mutableStateOf(false) }
-    var vlcTracks by remember { mutableStateOf<List<VlcAudioTrack>>(emptyList()) }
-    var showAudioTracks by remember { mutableStateOf(false) }
-    var vlcPosition by remember { mutableStateOf(0L) }
-    var vlcDuration by remember { mutableStateOf(0L) }
-    var vlcResumePosition by remember { mutableStateOf(0L) }
-    var error by remember { mutableStateOf("") }
-    var loading by remember { mutableStateOf(true) }
+    var loading by remember(entry.id) { mutableStateOf(true) }
+    var error by remember(entry.id) { mutableStateOf("") }
     var showList by remember { mutableStateOf(false) }
-    var showChannelInfo by remember { mutableStateOf(entry.kind == MediaKind.LIVE) }
-    var digitEntry by rememberSaveable { mutableStateOf("") }
-    var loadedEntry by remember { mutableStateOf<MediaEntry?>(null) }
-    var loadedWithVlc by remember { mutableStateOf(false) }
-    val latestUseVlc by rememberUpdatedState(useVlc)
-    val latestEntry by rememberUpdatedState(entry)
-    val latestPreferences by rememberUpdatedState(preferences)
-    val latestVlcSession by rememberUpdatedState(vlcSession)
-    val latestLoadedEntry by rememberUpdatedState(loadedEntry)
     val channelIndex = channels.indexOfFirst { it.id == entry.id }
+    val latestEntry by rememberUpdatedState(entry)
 
-    DisposableEffect(player) {
-        val listener = object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (!latestUseVlc) {
-                    loading = playbackState == Player.STATE_BUFFERING || playbackState == Player.STATE_IDLE
-                }
-            }
-
-            override fun onPlayerError(playbackException: PlaybackException) {
-                // Use current Compose state: this listener is installed once and otherwise
-                // retains the values captured during its first composition.
-                if (!latestUseVlc) {
-                    try {
-                        val currentEntry = latestEntry
-                        val currentPreferences = latestPreferences
-                        if (currentEntry.kind != MediaKind.LIVE && currentPreferences.resumePlayback()) {
-                            currentPreferences.saveProgress(
-                                currentEntry.id,
-                                player.currentPosition.coerceAtLeast(0L),
-                            )
-                        }
-                        if (latestVlcSession == null) {
-                            vlcSession = createVlcPlaybackSession(context)
-                        }
-                        error = ""
-                        loading = true
-                        useVlc = true
-                        return
-                    } catch (failure: RuntimeException) {
-                        error = failure.localizedMessage
-                            ?: playbackException.localizedMessage
-                            ?: "Playback failed. Check the stream or try VLC manually."
-                    }
-                } else {
-                    error = playbackException.localizedMessage ?: "Playback failed. Check the stream or try again."
-                }
-                loading = false
-            }
-        }
-        player.addListener(listener)
-        onDispose {
-            latestLoadedEntry?.let { lastEntry ->
-                if (!latestUseVlc && lastEntry.kind != MediaKind.LIVE && latestPreferences.resumePlayback()) {
-                    latestPreferences.saveProgress(lastEntry.id, player.currentPosition.coerceAtLeast(0L))
-                }
-            }
-            player.stop()
-            player.removeListener(listener)
-            player.release()
-        }
-    }
-
-    DisposableEffect(vlcSession) {
-        val session = vlcSession
-        if (session != null) {
-            session.player.setEventListener(VlcMediaPlayer.EventListener { event ->
-                when (event.type) {
-                    VlcMediaPlayer.Event.Opening, VlcMediaPlayer.Event.Buffering -> loading = true
-                    VlcMediaPlayer.Event.Playing -> {
-                        loading = false
-                        vlcPlaying = true
-                        error = ""
-                        vlcTracks = session.player.audioTracks
-                            ?.filter { it.id >= 0 }
-                            ?.map { VlcAudioTrack(it.id, it.name) }
-                            .orEmpty()
-                        vlcDuration = session.player.length.coerceAtLeast(0L)
-                        if (vlcResumePosition > 5_000L && session.player.isSeekable) {
-                            session.player.setTime(vlcResumePosition)
-                            vlcResumePosition = 0L
-                        }
-                    }
-                    VlcMediaPlayer.Event.Paused -> {
-                        loading = false
-                        vlcPlaying = false
-                    }
-                    VlcMediaPlayer.Event.Stopped, VlcMediaPlayer.Event.EndReached -> {
-                        loading = false
-                        vlcPlaying = false
-                    }
-                    VlcMediaPlayer.Event.ESAdded, VlcMediaPlayer.Event.ESSelected ->
-                        vlcTracks = session.player.audioTracks
-                            ?.filter { it.id >= 0 }
-                            ?.map { VlcAudioTrack(it.id, it.name) }
-                            .orEmpty()
-                    VlcMediaPlayer.Event.EncounteredError -> {
-                        loading = false
-                        vlcPlaying = false
-                        error = "VLC could not play this stream. Check its audio/video codecs and URL."
-                    }
-                }
-            })
-            session.player.attachViews(session.videoLayout, null, true, false)
-        }
-        onDispose {
-            session?.let {
-                val lastEntry = latestEntry
-                if (latestUseVlc && lastEntry.kind != MediaKind.LIVE && latestPreferences.resumePlayback()) {
-                    latestPreferences.saveProgress(lastEntry.id, it.player.time.coerceAtLeast(0L))
-                }
-                it.player.setEventListener(null)
-                it.player.stop()
-                it.player.detachViews()
-                it.player.release()
-                it.libVlc.release()
-            }
-        }
-    }
-
-    LaunchedEffect(entry.id, player, useVlc, vlcSession) {
-        loadedEntry?.let { previousEntry ->
-            if (previousEntry.kind != MediaKind.LIVE && preferences.resumePlayback()) {
-                val position = if (loadedWithVlc) vlcSession?.player?.time ?: player.currentPosition else player.currentPosition
-                preferences.saveProgress(previousEntry.id, position.coerceAtLeast(0L))
-            }
-        }
-        error = ""
+    DisposableEffect(entry.id) {
         if (entry.kind != MediaKind.LIVE) preferences.recordWatched(entry.id)
-        if (useVlc) {
-            player.playWhenReady = false
-            player.stop()
-            val session = vlcSession ?: return@LaunchedEffect
-            loading = true
-            vlcPlaying = false
-            vlcTracks = emptyList()
-            vlcPosition = 0L
-            vlcDuration = 0L
-            session.player.stop()
-            vlcResumePosition = if (entry.kind != MediaKind.LIVE && preferences.resumePlayback()) {
-                preferences.progress(entry.id)
-            } else {
-                0L
-            }
-            session.player.play(Uri.parse(entry.streamUrl))
-        } else {
-            vlcSession?.player?.stop()
-            vlcPlaying = false
-            showAudioTracks = false
-            loading = true
-            player.playWhenReady = false
-            player.stop()
-            player.clearMediaItems()
-            player.setMediaItem(MediaItem.fromUri(entry.streamUrl))
-            player.prepare()
-            if (entry.kind != MediaKind.LIVE && preferences.resumePlayback()) {
-                val resumePosition = preferences.progress(entry.id)
-                if (resumePosition > 5_000) player.seekTo(resumePosition)
-            }
-            player.playWhenReady = true
-        }
-        loadedEntry = entry
-        loadedWithVlc = useVlc
-    }
-
-    LaunchedEffect(useVlc, vlcSession) {
-        if (useVlc && vlcSession != null) {
-            while (true) {
-                vlcPosition = vlcSession?.player?.time?.coerceAtLeast(0L) ?: 0L
-                vlcDuration = vlcSession?.player?.length?.coerceAtLeast(0L) ?: 0L
-                delay(500)
-            }
-        }
-    }
-
-    LaunchedEffect(entry.id) {
-        showList = false
-        digitEntry = ""
-        showChannelInfo = entry.kind == MediaKind.LIVE
-    }
-
-    LaunchedEffect(entry.id, showChannelInfo) {
-        if (showChannelInfo && entry.kind == MediaKind.LIVE) {
-            delay(CHANNEL_INFO_DURATION_MS)
-            showChannelInfo = false
-        }
+        onDispose { }
     }
 
     Dialog(
@@ -2208,118 +1976,73 @@ private fun PlaybackDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         Box(
-                    Modifier.fillMaxSize().background(Ink).onPreviewKeyEvent { event ->
+            Modifier.fillMaxSize().background(Ink).onPreviewKeyEvent { event ->
                 val key = event.nativeKeyEvent
                 if (key.action != AndroidKeyEvent.ACTION_DOWN) return@onPreviewKeyEvent false
                 when (key.keyCode) {
                     AndroidKeyEvent.KEYCODE_BACK, AndroidKeyEvent.KEYCODE_ESCAPE -> {
-                        if (showList) {
-                            showList = false
-                            true
-                        } else false
+                        if (showList) { showList = false; true } else false
                     }
                     AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_DPAD_UP -> {
                         if (channels.isEmpty()) false else {
-                            val index = if (channelIndex <= 0) channels.lastIndex else channelIndex - 1
-                            onPlay(channels[index])
-                            true
+                            onPlay(channels[if (channelIndex <= 0) channels.lastIndex else channelIndex - 1]); true
                         }
                     }
                     AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_DPAD_DOWN -> {
                         if (channels.isEmpty()) false else {
-                            val index = if (channelIndex < 0 || channelIndex == channels.lastIndex) 0 else channelIndex + 1
-                            onPlay(channels[index])
-                            true
+                            onPlay(channels[if (channelIndex < 0 || channelIndex == channels.lastIndex) 0 else channelIndex + 1]); true
                         }
-                    }
-                    in AndroidKeyEvent.KEYCODE_0..AndroidKeyEvent.KEYCODE_9,
-                    in AndroidKeyEvent.KEYCODE_NUMPAD_0..AndroidKeyEvent.KEYCODE_NUMPAD_9 -> {
-                        val digit = if (key.keyCode in AndroidKeyEvent.KEYCODE_NUMPAD_0..AndroidKeyEvent.KEYCODE_NUMPAD_9) {
-                            key.keyCode - AndroidKeyEvent.KEYCODE_NUMPAD_0
-                        } else {
-                            key.keyCode - AndroidKeyEvent.KEYCODE_0
-                        }
-                        digitEntry = (digitEntry + digit).takeLast(4)
-                        true
-                    }
-                    AndroidKeyEvent.KEYCODE_ENTER,
-                    AndroidKeyEvent.KEYCODE_NUMPAD_ENTER,
-                    AndroidKeyEvent.KEYCODE_DPAD_CENTER,
-                    AndroidKeyEvent.KEYCODE_BUTTON_A -> {
-                        if (digitEntry.isBlank()) {
-                            showChannelInfo = entry.kind == MediaKind.LIVE
-                        } else {
-                            digitEntry.toIntOrNull()?.let { number ->
-                                channels.firstOrNull { preferences.channelNumber(it.id) == number }?.let {
-                                    showList = false
-                                    onPlay(it)
-                                }
-                            }
-                        }
-                        digitEntry = ""
-                        true
                     }
                     else -> false
                 }
             },
         ) {
-            val currentVlcSession = vlcSession
-            if (useVlc && currentVlcSession != null) {
             AndroidView(
-                factory = { currentVlcSession.videoLayout },
+                factory = { viewContext ->
+                    android.widget.VideoView(viewContext).apply {
+                        setOnPreparedListener { mediaPlayer ->
+                            loading = false
+                            error = ""
+                            mediaPlayer.setOnVideoSizeChangedListener { mp, _, _ ->
+                                // The platform player chooses the available decoder and video size.
+                            }
+                            start()
+                        }
+                        setOnErrorListener { _, what, extra ->
+                            loading = false
+                            error = "Android player couldn't play this stream (error $what/$extra). This format or stream may not be supported by your device."
+                            true
+                        }
+                        setOnInfoListener { _, what, _ ->
+                            if (what == android.media.MediaPlayer.MEDIA_INFO_BUFFERING_START) loading = true
+                            if (what == android.media.MediaPlayer.MEDIA_INFO_BUFFERING_END) loading = false
+                            true
+                        }
+                        setVideoURI(Uri.parse(entry.streamUrl))
+                        setKeepScreenOn(true)
+                    }
+                },
+                update = { video ->
+                    if (video.tag != entry.id) {
+                        video.tag = entry.id
+                        loading = true
+                        error = ""
+                        video.setVideoURI(Uri.parse(entry.streamUrl))
+                    }
+                },
                 modifier = Modifier.fillMaxSize(),
             )
-            } else {
-                AndroidView(
-                    factory = { viewContext ->
-                        PlayerView(viewContext).apply {
-                            this.player = player
-                            useController = true
-                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                            keepScreenOn = true
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-            if (showChannelInfo && entry.kind == MediaKind.LIVE) {
+            if (entry.kind == MediaKind.LIVE) {
                 Column(
-                    Modifier.align(Alignment.TopStart).padding(28.dp).background(Ink.copy(alpha = 0.82f), RoundedCornerShape(8.dp)).padding(14.dp),
+                    Modifier.align(Alignment.TopStart).padding(24.dp)
+                        .background(Ink.copy(alpha = 0.82f), RoundedCornerShape(8.dp)).padding(14.dp),
                 ) {
                     Text("${(channelIndex + 1).coerceAtLeast(1).toString().padStart(3, '0')}  |  LIVE", color = Lime, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Text(entry.title, color = TextMain, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                     Text(entry.category, color = TextMuted, fontSize = 12.sp)
                 }
             }
-            Row(Modifier.align(Alignment.TopEnd).padding(20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = {
-                        if (useVlc) {
-                            if (entry.kind != MediaKind.LIVE && preferences.resumePlayback()) {
-                                preferences.saveProgress(entry.id, vlcSession?.player?.time?.coerceAtLeast(0L) ?: 0L)
-                            }
-                            useVlc = false
-                        } else {
-                            try {
-                                if (vlcSession == null) vlcSession = createVlcPlaybackSession(context)
-                                if (entry.kind != MediaKind.LIVE && preferences.resumePlayback()) {
-                                    preferences.saveProgress(entry.id, player.currentPosition)
-                                }
-                                useVlc = true
-                            } catch (failure: RuntimeException) {
-                                error = failure.localizedMessage ?: "Could not start the VLC decoder."
-                                loading = false
-                            }
-                        }
-                    },
-                ) {
-                    Text(if (useVlc) "Media3" else "No sound? VLC")
-                }
-                if (useVlc) {
-                    OutlinedButton(onClick = { showAudioTracks = true }, enabled = vlcTracks.isNotEmpty()) {
-                        Text("Audio (${vlcTracks.size})")
-                    }
-                }
+            Row(Modifier.align(Alignment.TopEnd).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (entry.kind == MediaKind.LIVE && channels.isNotEmpty()) {
                     OutlinedButton(onClick = { showList = !showList }) { Text(if (showList) "Hide channels" else "Channels") }
                 }
@@ -2327,54 +2050,22 @@ private fun PlaybackDialog(
             }
             if (loading) CircularProgressIndicator(Modifier.align(Alignment.Center), color = Lime)
             if (error.isNotBlank()) {
-                Column(Modifier.align(Alignment.Center).background(Ink.copy(alpha = 0.9f), RoundedCornerShape(10.dp)).padding(24.dp)) {
+                Column(
+                    Modifier.align(Alignment.Center).background(Ink.copy(alpha = 0.94f), RoundedCornerShape(10.dp)).padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text("Playback unavailable", color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     Text(error, color = TextMuted, modifier = Modifier.padding(top = 6.dp, bottom = 12.dp))
                     Button(onClick = {
                         error = ""
-                        if (useVlc) vlcSession?.player?.play() else {
-                            player.prepare()
-                            player.play()
-                        }
+                        loading = true
                     }) { Text("Retry") }
-                }
-            }
-            if (useVlc && currentVlcSession != null) {
-                Column(
-                    Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                        .background(Ink.copy(alpha = 0.9f)).padding(horizontal = 24.dp, vertical = 12.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(formatPlaybackTime(vlcPosition), color = TextMain, fontSize = 11.sp)
-                        Slider(
-                            value = vlcPosition.coerceIn(0L, vlcDuration.coerceAtLeast(1L)).toFloat(),
-                            onValueChange = { vlcPosition = it.toLong() },
-                            onValueChangeFinished = { vlcSession?.player?.setTime(vlcPosition) },
-                            valueRange = 0f..vlcDuration.coerceAtLeast(1L).toFloat(),
-                            modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
-                        )
-                        Text(formatPlaybackTime(vlcDuration), color = TextMain, fontSize = 11.sp)
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedButton(onClick = {
-                            vlcSession?.player?.setTime((vlcPosition - 10_000L).coerceAtLeast(0L))
-                        }) { Text("-10s") }
-                        Button(
-                            onClick = {
-                                vlcSession?.player?.let { if (vlcPlaying) it.pause() else it.play() }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Ink),
-                        ) { Text(if (vlcPlaying) "Pause" else "Play") }
-                        OutlinedButton(onClick = {
-                            vlcSession?.player?.setTime((vlcPosition + 10_000L).coerceAtMost(vlcDuration))
-                        }) { Text("+10s") }
-                        Text("VLC audio/video decoder", color = TextMuted, fontSize = 11.sp)
-                    }
                 }
             }
             if (showList) {
                 LazyColumn(
-                    Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(330.dp).background(Ink.copy(alpha = 0.96f)).padding(14.dp),
+                    Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(330.dp)
+                        .background(Ink.copy(alpha = 0.96f)).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     itemsIndexed(channels, key = { _, channel -> channel.id }) { index, channel ->
@@ -2393,52 +2084,8 @@ private fun PlaybackDialog(
                     }
                 }
             }
-            if (showAudioTracks) {
-                AlertDialog(
-                    onDismissRequest = { showAudioTracks = false },
-                    title = { Text("Audio tracks", color = TextMain) },
-                    text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            vlcTracks.forEach { track ->
-                                TextButton(
-                                    onClick = {
-                                        vlcSession?.player?.setAudioTrack(track.id)
-                                        showAudioTracks = false
-                                    },
-                                ) {
-                                    Text(track.name, color = TextMain)
-                                }
-                            }
-                        }
-                    },
-                    confirmButton = { TextButton(onClick = { showAudioTracks = false }) { Text("Close") } },
-                )
-            }
         }
     }
-}
-
-private fun createVlcPlaybackSession(context: Context): VlcPlaybackSession {
-    val libVlc = LibVLC(context, listOf("--no-video-title-show"))
-    return try {
-        VlcPlaybackSession(
-            libVlc = libVlc,
-            player = VlcMediaPlayer(libVlc),
-            videoLayout = VLCVideoLayout(context),
-        )
-    } catch (failure: RuntimeException) {
-        libVlc.release()
-        throw failure
-    }
-}
-
-private fun formatPlaybackTime(milliseconds: Long): String {
-    val totalSeconds = milliseconds.coerceAtLeast(0L) / 1_000
-    val hours = totalSeconds / 3_600
-    val minutes = (totalSeconds / 60) % 60
-    val seconds = totalSeconds % 60
-    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds)
-    else "%d:%02d".format(totalSeconds / 60, seconds)
 }
 
 @Composable
