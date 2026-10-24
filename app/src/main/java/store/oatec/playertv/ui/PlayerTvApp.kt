@@ -9,6 +9,7 @@ import android.view.KeyEvent as AndroidKeyEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -198,7 +199,15 @@ fun PlayerTvApp() {
                 // Xtream response is being downloaded. Read it in bounded DB pages.
                 if (source.id == activeSourceId) {
                     val cached = withContext(Dispatchers.IO) {
-                        mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = 0)
+                        buildList {
+                            var offset = 0
+                            while (true) {
+                                val page = mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = offset)
+                                addAll(page)
+                                if (page.size < 500) break
+                                offset += page.size
+                            }
+                        }
                     }
                     if (cached.isNotEmpty() && source.id == activeSourceId) {
                         catalog = when (catalogSection) {
@@ -1139,6 +1148,7 @@ private fun LiveScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChannelRow(
     number: Int,
