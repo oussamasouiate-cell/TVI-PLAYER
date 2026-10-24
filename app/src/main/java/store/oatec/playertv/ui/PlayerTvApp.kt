@@ -806,6 +806,7 @@ private fun SettingsScreen(
     var kidsEnabled by remember { mutableStateOf(preferences.kidsModeEnabled()) }
     var showKidsPinDialog by remember { mutableStateOf(false) }
     var kidsPinInput by remember { mutableStateOf("") }
+    var kidsCurrentPinInput by remember { mutableStateOf("") }
     var kidsPinError by remember { mutableStateOf("") }
     var kidsPinSaved by remember { mutableStateOf(false) }
     var showKidsRulesDialog by remember { mutableStateOf(false) }
@@ -887,6 +888,7 @@ private fun SettingsScreen(
                     Switch(checked = kidsEnabled, onCheckedChange = { enabled ->
                         if (enabled && !preferences.hasKidsPin()) {
                             kidsPinInput = ""
+                            kidsCurrentPinInput = ""
                             kidsPinError = ""
                             showKidsPinDialog = true
                         } else {
@@ -898,6 +900,7 @@ private fun SettingsScreen(
                     OutlinedButton(onClick = { showKidsRulesDialog = true; kidsRuleItemId = ""; kidsRuleMessage = "" }) { Text("Manage content rules") }
                     OutlinedButton(onClick = {
                         kidsPinInput = ""
+                        kidsCurrentPinInput = ""
                         kidsPinError = ""
                         kidsPinSaved = false
                         showKidsPinDialog = true
@@ -933,10 +936,20 @@ private fun SettingsScreen(
                 }
                 if (showKidsPinDialog) {
                     AlertDialog(
-                        onDismissRequest = { showKidsPinDialog = false; kidsPinInput = ""; kidsPinError = "" },
+                        onDismissRequest = { showKidsPinDialog = false; kidsPinInput = ""; kidsCurrentPinInput = ""; kidsPinError = "" },
                         title = { Text(if (preferences.hasKidsPin()) "Set a new Kids Mode PIN" else "Create Kids Mode PIN") },
                         text = {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (preferences.hasKidsPin()) {
+                                    OutlinedTextField(
+                                        value = kidsCurrentPinInput,
+                                        onValueChange = { value -> if (value.length <= 8 && value.all(Char::isDigit)) kidsCurrentPinInput = value },
+                                        label = { Text("Current PIN") },
+                                        singleLine = true,
+                                        visualTransformation = PasswordVisualTransformation(),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                                    )
+                                }
                                 OutlinedTextField(
                                     value = kidsPinInput,
                                     onValueChange = { value ->
@@ -953,18 +966,19 @@ private fun SettingsScreen(
                         },
                         confirmButton = {
                             TextButton(onClick = {
-                                val saved = preferences.setKidsPin(kidsPinInput)
+                                val saved = if (preferences.hasKidsPin()) preferences.changeKidsPin(kidsCurrentPinInput, kidsPinInput) else preferences.setKidsPin(kidsPinInput)
                                 if (saved) {
                                     kidsEnabled = true
                                     kidsPinSaved = true
                                     showKidsPinDialog = false
                                     kidsPinInput = ""
+                                    kidsCurrentPinInput = ""
                                     kidsPinError = ""
-                                } else kidsPinError = "Enter 4 to 8 digits."
+                                } else kidsPinError = if (preferences.hasKidsPin()) "Check the current PIN and enter a new 4–8 digit PIN." else "Enter 4 to 8 digits."
                             }) { Text("Save PIN") }
                         },
                         dismissButton = {
-                            TextButton(onClick = { showKidsPinDialog = false; kidsPinInput = ""; kidsPinError = "" }) { Text("Cancel") }
+                            TextButton(onClick = { showKidsPinDialog = false; kidsPinInput = ""; kidsCurrentPinInput = ""; kidsPinError = "" }) { Text("Cancel") }
                         },
                     )
                 }
