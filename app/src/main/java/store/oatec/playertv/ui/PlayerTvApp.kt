@@ -241,7 +241,15 @@ fun PlayerTvApp() {
                 selectedDetails = null
             }
             currentSection != Section.LIVE -> section = Section.LIVE.name
-            else -> (context as? Activity)?.finish()
+            // Back from the root LIVE/channels screen must never close the app accidentally.
+            // Return to Home instead; Android system Home/Recents remain available as usual.
+            else -> {
+                section = Section.HOME.name
+                selectedCategory = "All"
+                search = ""
+                selectedMedia = null
+                selectedDetails = null
+            }
         }
     }
 
