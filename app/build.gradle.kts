@@ -25,6 +25,7 @@ android {
 
         // Supply locally with -PYOUTUBE_API_KEY=...; never commit the key.
         buildConfigField("String", "YOUTUBE_API_KEY", "\"${providers.gradleProperty("YOUTUBE_API_KEY").orElse("").get()}\"")
+        buildConfigField("String", "OPEN_SUBTITLES_API_KEY", "\"${providers.gradleProperty("OPEN_SUBTITLES_API_KEY").orElse("").get()}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
