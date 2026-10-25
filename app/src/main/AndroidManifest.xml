@@ -11,7 +11,7 @@
         android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
-            android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize"
             android:screenOrientation="landscape"
             android:exported="true">
             <intent-filter>
