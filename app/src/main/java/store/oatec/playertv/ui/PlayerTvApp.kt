@@ -179,7 +179,7 @@ private fun activateOatecCode(context: Context, code: String): PlayerSource {
         setRequestProperty("Content-Type", "application/json; charset=utf-8")
         setRequestProperty("Accept", "application/json")
     }
-    try {
+    return try {
         connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
         val status = connection.responseCode
         val stream = if (status in 200..299) connection.inputStream else connection.errorStream
