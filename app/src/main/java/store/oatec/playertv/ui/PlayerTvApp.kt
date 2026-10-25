@@ -2750,8 +2750,16 @@ private fun PlaybackDialog(
         }
         player.addListener(listener)
         onDispose {
-            if (latestEngine == "exoplayer" && latestEntry.kind != MediaKind.LIVE && latestPreferences.resumePlayback()) {
-                latestPreferences.saveProgress(latestEntry.id, player.currentPosition.coerceAtLeast(0L), player.duration.coerceAtLeast(0L))
+            if (latestEntry.kind != MediaKind.LIVE && latestPreferences.resumePlayback()) {
+                if (latestEngine == "exoplayer") {
+                    latestPreferences.saveProgress(latestEntry.id, player.currentPosition.coerceAtLeast(0L), player.duration.coerceAtLeast(0L))
+                } else if (latestEngine == "mpv") {
+                    runCatching {
+                        val positionMs = ((mpvView?.timePos ?: 0.0) * 1_000.0).toLong().coerceAtLeast(0L)
+                        val durationMs = ((mpvView?.duration ?: 0.0) * 1_000.0).toLong().coerceAtLeast(0L)
+                        if (positionMs > 0L) latestPreferences.saveProgress(latestEntry.id, positionMs, durationMs)
+                    }
+                }
             }
             player.stop()
             player.removeListener(listener)
@@ -2762,8 +2770,16 @@ private fun PlaybackDialog(
     LaunchedEffect(player, entry.id, activeEngine) {
         while (true) {
             delay(5_000)
-            if (activeEngine == "exoplayer" && entry.kind != MediaKind.LIVE && preferences.resumePlayback() && player.isPlaying) {
-                preferences.saveProgress(entry.id, player.currentPosition.coerceAtLeast(0L), player.duration.coerceAtLeast(0L))
+            if (entry.kind != MediaKind.LIVE && preferences.resumePlayback()) {
+                if (activeEngine == "exoplayer" && player.isPlaying) {
+                    preferences.saveProgress(entry.id, player.currentPosition.coerceAtLeast(0L), player.duration.coerceAtLeast(0L))
+                } else if (activeEngine == "mpv") {
+                    runCatching {
+                        val positionMs = ((mpvView?.timePos ?: 0.0) * 1_000.0).toLong().coerceAtLeast(0L)
+                        val durationMs = ((mpvView?.duration ?: 0.0) * 1_000.0).toLong().coerceAtLeast(0L)
+                        if (positionMs > 0L) preferences.saveProgress(entry.id, positionMs, durationMs)
+                    }
+                }
             }
         }
     }
@@ -2790,10 +2806,25 @@ private fun PlaybackDialog(
             runCatching {
                 // MPV initialization is expensive on some TV boxes, so prepare its native core off the UI thread.
                 val prepared: PreparedCore = withContext(Dispatchers.IO) {
-                    view.prepare(MpvOptions(tlsCaFile = mpvCaBundle))
+                    view.prepare(
+                        MpvOptions(
+                            tlsCaFile = mpvCaBundle,
+                            // Prefer Arabic subtitles, then English/French when the stream provides them.
+                            subtitleLanguages = listOf("ar", "ara", "en", "eng", "fr", "fre"),
+                            // Automatically discover adjacent external subtitle files where supported.
+                            extra = mapOf("sub-auto" to "all"),
+                        ),
+                    )
                 }
                 view.attach(prepared)
                 view.playFile(entry.streamUrl).getOrThrow()
+                if (entry.kind != MediaKind.LIVE && preferences.resumePlayback()) {
+                    val resumePosition = preferences.progress(entry.id)
+                    if (resumePosition > 5_000L) {
+                        // MPV reports positions in seconds; the shared progress store uses milliseconds.
+                        view.timePos = resumePosition / 1_000.0
+                    }
+                }
             }.onSuccess {
                 loading = false
             }.onFailure { failure ->
