@@ -3578,6 +3578,93 @@ private fun KidsDashboard(
 }
 
 
+private fun searchYouTubeTrailer(entry: MediaEntry): String? {
+    val apiKey = BuildConfig.YOUTUBE_API_KEY.trim()
+    if (apiKey.isBlank()) throw IllegalStateException("YouTube API key is not configured.")
+    val title = buildString {
+        append(entry.title.trim())
+        val year = entry.year.ifBlank { entry.releaseDate.take(4) }
+        if (year.isNotBlank()) append(" ").append(year)
+        append(" official trailer")
+    }
+    val params = listOf(
+        "part" to "snippet",
+        "q" to title,
+        "type" to "video",
+        "videoEmbeddable" to "true",
+        "maxResults" to "8",
+        "safeSearch" to "moderate",
+        "regionCode" to "MA",
+        "key" to apiKey,
+    ).joinToString("&") { (key, value) ->
+        java.net.URLEncoder.encode(key, "UTF-8") + "=" + java.net.URLEncoder.encode(value, "UTF-8")
+    }
+    val connection = (URL("https://www.googleapis.com/youtube/v3/search?$params").openConnection() as HttpURLConnection).apply {
+        requestMethod = "GET"
+        connectTimeout = 7000
+        readTimeout = 7000
+        setRequestProperty("Accept", "application/json")
+    }
+    return try {
+        val code = connection.responseCode
+        val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+        val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+        if (code !in 200..299) {
+            val message = runCatching { JSONObject(body).optJSONObject("error")?.optString("message").orEmpty() }.getOrDefault("")
+            throw IOException(message.ifBlank { "YouTube trailer search failed (HTTP $code)." })
+        }
+        val items = JSONObject(body).optJSONArray("items") ?: return null
+        for (i in 0 until items.length()) {
+            val item = items.optJSONObject(i) ?: continue
+            val id = item.optJSONObject("id")?.optString("videoId").orEmpty()
+            val snippet = item.optJSONObject("snippet") ?: continue
+            val candidateTitle = snippet.optString("title").lowercase()
+            if (id.isNotBlank() && (candidateTitle.contains("trailer") || candidateTitle.contains("teaser"))) return id
+        }
+        (0 until items.length()).asSequence()
+            .mapNotNull { items.optJSONObject(it)?.optJSONObject("id")?.optString("videoId") }
+            .firstOrNull { it.isNotBlank() }
+    } finally {
+        connection.disconnect()
+    }
+}
+
+@Composable
+private fun YouTubeTrailerDialog(videoId: String, onDismiss: () -> Unit) {
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { context ->
+                    WebView(context).apply {
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.mediaPlaybackRequiresUserGesture = false
+                        settings.allowFileAccess = false
+                        settings.allowContentAccess = false
+                        settings.loadWithOverviewMode = true
+                        settings.useWideViewPort = true
+                        webViewClient = WebViewClient()
+                        webViewRef = this
+                        val html = """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><style>html,body,iframe{margin:0;width:100%;height:100%;background:#000;border:0;overflow:hidden}</style></head><body><iframe src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&controls=0&modestbranding=1&rel=0&playsinline=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></body></html>"""
+                        loadDataWithBaseURL("https://www.youtube-nocookie.com", html, "text/html", "UTF-8", null)
+                    }
+                },
+                update = { webViewRef = it },
+                onRelease = { it.stopLoading(); it.destroy(); if (webViewRef === it) webViewRef = null },
+            )
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+            ) { Text("Close", color = Color.White) }
+        }
+    }
+}
+
 @Composable
 private fun KidsYouTubePlayerDialog(videoId: String, onDismiss: () -> Unit) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
