@@ -182,6 +182,8 @@ fun PlayerTvApp() {
     val activeSource = sources.firstOrNull { it.id == activeSourceId }
     var catalog by remember { mutableStateOf(SourceCatalog()) }
         var loadedCatalogs by remember { mutableStateOf<Set<String>>(emptySet()) }
+    // DB pagination offset must count raw rows, before Kids Mode filtering.
+    var catalogPageOffsets by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     // Open directly on the live channel list; users can switch straight to Movies, Series, or Settings.
     var section by remember { mutableStateOf(Section.LIVE.name) }
     var selectedCategory by rememberSaveable { mutableStateOf("All") }
@@ -304,6 +306,7 @@ fun PlayerTvApp() {
                     }
                     val cached = cachedState.first
                     val cachedCount = cachedState.second
+                    catalogPageOffsets = catalogPageOffsets + (loadKey to cached.size)
                     if (cached.isNotEmpty() && source.id == activeSourceId) {
                         val safeCached = applyKidsModeFilter(cached, preferences)
                         catalog = when (catalogSection) {
@@ -348,6 +351,7 @@ fun PlayerTvApp() {
                     }
                         .onSuccess { (result, firstPage, totalCount) ->
                             if (source.id == activeSourceId) {
+                                catalogPageOffsets = catalogPageOffsets + (loadKey to firstPage.size)
                                 catalog = when (catalogSection) {
                                     CatalogSection.LIVE -> catalog.copy(liveChannels = applyKidsModeFilter(firstPage, preferences))
                                     CatalogSection.MOVIES -> catalog.copy(movies = applyKidsModeFilter(firstPage, preferences))
@@ -376,7 +380,8 @@ fun PlayerTvApp() {
             else -> return
         }
         if (loadingMore) return
-        val currentSize = when (catalogSection) {
+        val loadKey = "${source.id}:${catalogSection.name}"
+        val currentSize = catalogPageOffsets[loadKey] ?: when (catalogSection) {
             CatalogSection.LIVE -> catalog.liveChannels.size
             CatalogSection.MOVIES -> catalog.movies.size
             CatalogSection.SERIES -> catalog.series.size
@@ -404,6 +409,7 @@ fun PlayerTvApp() {
                     )
                 }
                 if (source.id == activeSourceId && requestedSearch == search && page.isNotEmpty()) {
+                    catalogPageOffsets = catalogPageOffsets + (loadKey to (currentSize + page.size))
                     val combined = when (catalogSection) {
                         CatalogSection.LIVE -> catalog.liveChannels + page
                         CatalogSection.MOVIES -> catalog.movies + page
