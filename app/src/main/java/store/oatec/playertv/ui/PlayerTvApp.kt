@@ -1217,22 +1217,38 @@ private fun InitialSetupScreen(
                     ) { Text("OATEC website", fontSize = 11.sp) }
                     Button(
                         onClick = {
-                            val parsed = Uri.parse(serverUrl.trim())
+                            val rawUrl = serverUrl.trim()
+                            val parsed = Uri.parse(rawUrl)
+                            val queryUser = parsed.getQueryParameter("username").orEmpty().trim()
+                            val queryPassword = parsed.getQueryParameter("password").orEmpty()
+                            val isXtreamPlaylistUrl = !isXtream &&
+                                parsed.lastPathSegment.equals("get.php", ignoreCase = true) &&
+                                queryUser.isNotBlank() && queryPassword.isNotBlank()
+                            val resolvedSource = if (isXtreamPlaylistUrl) {
+                                val baseUrl = rawUrl.substringBefore('?').substringBeforeLast('/')
+                                PlayerSource(
+                                    id = UUID.randomUUID().toString(),
+                                    name = sourceName.trim().ifBlank { "Xtream source" },
+                                    type = SourceType.XTREAM,
+                                    serverUrl = baseUrl,
+                                    username = queryUser,
+                                    password = queryPassword,
+                                )
+                            } else {
+                                PlayerSource(
+                                    id = UUID.randomUUID().toString(),
+                                    name = sourceName.trim().ifBlank { if (isXtream) "Xtream source" else "M3U playlist" },
+                                    type = if (isXtream) SourceType.XTREAM else SourceType.M3U,
+                                    serverUrl = rawUrl,
+                                    username = username.trim(),
+                                    password = password,
+                                )
+                            }
                             when {
                                 parsed.host.isNullOrBlank() || parsed.scheme !in setOf("http", "https") -> error = "دخل رابط HTTP أو HTTPS صحيح."
                                 isXtream && (username.isBlank() || password.isBlank()) -> error = "دخل Username وPassword ديال Xtream."
-                                else -> onComplete(
-                                    premiumCode.trim(),
-                                    PlayerSource(
-                                        id = UUID.randomUUID().toString(),
-                                        name = sourceName.trim().ifBlank { if (isXtream) "Xtream source" else "M3U playlist" },
-                                        type = if (isXtream) SourceType.XTREAM else SourceType.M3U,
-                                        serverUrl = serverUrl.trim(),
-                                        username = username.trim(),
-                                        password = password,
-                                    ),
-                                )
-                            }
+                                isXtreamPlaylistUrl && (resolvedSource.serverUrl.isBlank() || resolvedSource.username.isBlank() || resolvedSource.password.isBlank()) -> error = "رابط Xtream M3U ناقص معلومات الدخول."
+                                else -> onComplete(premiumCode.trim(), resolvedSource)
                         },
                         modifier = Modifier.weight(1f).height(if (compactLandscape) 42.dp else 48.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color.White),
