@@ -67,6 +67,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -105,10 +106,8 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import org.videolan.libvlc.LibVLC
-import org.videolan.libvlc.Media
-import org.videolan.libvlc.MediaPlayer
-import org.videolan.libvlc.util.VLCVideoLayout
+import io.github.yuroyami.libmpvkt.view.MpvOptions
+import io.github.yuroyami.libmpvkt.view.MpvView
 import coil.compose.AsyncImage
 import java.io.File
 import java.io.IOException
@@ -1072,9 +1071,9 @@ private fun SettingsScreen(
                 var playbackEngine by remember { mutableStateOf(preferences.playbackEngine()) }
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Playback engine", color = TextMain, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Auto switches to VLC after an ExoPlayer playback error. You can also select a player manually.", color = TextMuted, fontSize = 11.sp)
+                    Text("Choose the playback engine for Live TV, movies and series.", color = TextMuted, fontSize = 11.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("auto" to "Auto", "exoplayer" to "ExoPlayer", "libvlc" to "LibVLC").forEach { (value, label) ->
+                        listOf("exoplayer" to "Media3 / ExoPlayer", "mpv" to "MPV").forEach { (value, label) ->
                             if (playbackEngine == value) {
                                 Button(onClick = { playbackEngine = value; preferences.setPlaybackEngine(value) }) { Text(label) }
                             } else {
@@ -2334,27 +2333,6 @@ private fun NumberPadDialog(
     )
 }
 
-private class VlcPlaybackSession(context: Context, streamUrl: String) {
-    private val libVlc = LibVLC(context, arrayListOf("--no-drop-late-frames", "--no-skip-frames"))
-    val mediaPlayer = MediaPlayer(libVlc)
-    val videoLayout = VLCVideoLayout(context)
-
-    init {
-        mediaPlayer.attachViews(videoLayout, null, false, false)
-        val media = Media(libVlc, Uri.parse(streamUrl))
-        mediaPlayer.media = media
-        media.release()
-        mediaPlayer.play()
-    }
-
-    fun release() {
-        runCatching { mediaPlayer.stop() }
-        runCatching { mediaPlayer.detachViews() }
-        runCatching { mediaPlayer.release() }
-        runCatching { libVlc.release() }
-    }
-}
-
 @Composable
 private fun PlaybackDialog(
     entry: MediaEntry,
@@ -2394,15 +2372,20 @@ private fun PlaybackDialog(
             .sortedByDescending { streamQualityRank(it) }
     }
     var activeEngine by remember(entry.id) { mutableStateOf(preferences.playbackEngine()) }
-    val vlcSession = remember(context, entry.id, activeEngine) {
-        if (activeEngine == "libvlc") runCatching { VlcPlaybackSession(context, entry.streamUrl) }.getOrNull() else null
+    val mpvCaBundle = remember(context) {
+        File(context.filesDir, "mpv-cacert.pem").apply {
+            if (!exists()) {
+                context.assets.open("cacert.pem").use { input ->
+                    outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+        }
     }
-    DisposableEffect(vlcSession) {
-        onDispose { vlcSession?.release() }
-    }
+    var mpvAttempt by remember(entry.id) { mutableStateOf(0) }
     val channelIndex = channels.indexOfFirst { it.id == entry.id }
     val latestEntry by rememberUpdatedState(entry)
     val latestPreferences by rememberUpdatedState(preferences)
+    val latestEngine by rememberUpdatedState(activeEngine)
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -2425,19 +2408,14 @@ private fun PlaybackDialog(
                         return
                     }
                 }
-                if (latestPreferences.playbackEngine() == "auto" && activeEngine == "auto") {
-                    activeEngine = "libvlc"
-                    error = ""
-                    loading = true
-                }
-                if (latestEntry.kind != MediaKind.LIVE && latestPreferences.resumePlayback()) {
+                if (latestEngine == "exoplayer" && latestEntry.kind != MediaKind.LIVE && latestPreferences.resumePlayback()) {
                     latestPreferences.saveProgress(latestEntry.id, player.currentPosition.coerceAtLeast(0L))
                 }
             }
         }
         player.addListener(listener)
         onDispose {
-            if (latestEntry.kind != MediaKind.LIVE && latestPreferences.resumePlayback()) {
+            if (latestEngine == "exoplayer" && latestEntry.kind != MediaKind.LIVE && latestPreferences.resumePlayback()) {
                 latestPreferences.saveProgress(latestEntry.id, player.currentPosition.coerceAtLeast(0L))
             }
             player.stop()
@@ -2446,19 +2424,21 @@ private fun PlaybackDialog(
         }
     }
 
-    LaunchedEffect(entry.id) {
+    LaunchedEffect(entry.id, activeEngine) {
         error = ""
         loading = true
         if (entry.kind != MediaKind.LIVE) preferences.recordWatched(entry.id)
-        player.stop()
-        player.clearMediaItems()
-        player.setMediaItem(MediaItem.fromUri(entry.streamUrl))
-        player.prepare()
-        if (entry.kind != MediaKind.LIVE && preferences.resumePlayback()) {
-            val position = preferences.progress(entry.id)
-            if (position > 5_000L) player.seekTo(position)
+        if (activeEngine == "exoplayer") {
+            player.stop()
+            player.clearMediaItems()
+            player.setMediaItem(MediaItem.fromUri(entry.streamUrl))
+            player.prepare()
+            if (entry.kind != MediaKind.LIVE && preferences.resumePlayback()) {
+                val position = preferences.progress(entry.id)
+                if (position > 5_000L) player.seekTo(position)
+            }
+            player.playWhenReady = true
         }
-        player.playWhenReady = true
     }
 
     Dialog(
@@ -2487,14 +2467,26 @@ private fun PlaybackDialog(
                 }
             },
         ) {
-            if (activeEngine == "libvlc") {
-                if (vlcSession != null) {
+            if (activeEngine == "mpv") {
+                key(mpvAttempt) {
                     AndroidView(
-                        factory = { vlcSession.videoLayout },
+                        factory = { viewContext ->
+                            MpvView(viewContext).apply {
+                                keepScreenOn = true
+                                runCatching {
+                                    initialize(MpvOptions(tlsCaFile = mpvCaBundle))
+                                    playFile(entry.streamUrl)
+                                }.onSuccess {
+                                    loading = false
+                                }.onFailure { failure ->
+                                    loading = false
+                                    error = failure.localizedMessage ?: "MPV could not start this stream."
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxSize(),
+                        onRelease = { it.destroy() },
                     )
-                } else {
-                    Text("LibVLC could not start for this stream.", color = ErrorRed, modifier = Modifier.align(Alignment.Center))
                 }
             } else {
                 AndroidView(
@@ -2541,16 +2533,13 @@ private fun PlaybackDialog(
                         Button(onClick = {
                             error = ""
                             loading = true
-                            if (activeEngine == "libvlc") {
-                                activeEngine = "exoplayer"
+                            if (activeEngine == "mpv") {
+                                mpvAttempt++
                             } else {
                                 player.prepare()
                                 player.play()
                             }
-                        }) { Text(if (activeEngine == "libvlc") "Try ExoPlayer" else "Retry") }
-                        if (activeEngine != "libvlc") {
-                            OutlinedButton(onClick = { error = ""; loading = true; activeEngine = "libvlc" }) { Text("Try VLC") }
-                        }
+                        }) { Text("Retry") }
                     }
                 }
             }
