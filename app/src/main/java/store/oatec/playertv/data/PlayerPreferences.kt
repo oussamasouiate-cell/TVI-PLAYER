@@ -75,8 +75,28 @@ class PlayerPreferences(context: Context) {
 
     fun progress(itemId: String): Long = preferences.getLong("progress:$itemId", 0L)
 
-    fun saveProgress(itemId: String, positionMs: Long) {
-        preferences.edit().putLong("progress:$itemId", positionMs.coerceAtLeast(0L)).apply()
+    fun duration(itemId: String): Long = preferences.getLong("duration:$itemId", 0L)
+
+    fun saveProgress(itemId: String, positionMs: Long, durationMs: Long = 0L) {
+        val position = positionMs.coerceAtLeast(0L)
+        val duration = durationMs.coerceAtLeast(0L)
+        val editor = preferences.edit()
+        if (duration > 0L) editor.putLong("duration:$itemId", duration)
+        if (duration > 0L && position >= duration - 30_000L) {
+            editor.remove("progress:$itemId")
+        } else if (position > 0L) {
+            editor.putLong("progress:$itemId", position)
+        } else {
+            editor.remove("progress:$itemId")
+        }
+        editor.apply()
+    }
+
+    fun watchProgressFraction(itemId: String): Float {
+        val position = progress(itemId)
+        val duration = duration(itemId)
+        if (position < 5_000L || duration <= 0L || position >= duration - 30_000L) return 0f
+        return (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
     }
 
     fun resumePlayback(): Boolean = preferences.getBoolean(RESUME_PLAYBACK_KEY, true)
