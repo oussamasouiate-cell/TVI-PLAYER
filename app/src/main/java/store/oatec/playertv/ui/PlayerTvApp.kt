@@ -250,7 +250,7 @@ fun PlayerTvApp() {
                 // Xtream response is being downloaded. Read it in bounded DB pages.
                 if (source.id == activeSourceId) {
                     val cachedState = withContext(Dispatchers.IO) {
-                        mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = 0) to
+                        mediaCatalogStore.page(source.id, catalogSection.name, limit = Int.MAX_VALUE, offset = 0) to
                             mediaCatalogStore.count(source.id, catalogSection.name)
                     }
                     val cached = cachedState.first
@@ -292,7 +292,7 @@ fun PlayerTvApp() {
                                 kotlinx.coroutines.delay(450)
                                 loaded
                             }
-                            val firstPage = mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = 0)
+                            val firstPage = mediaCatalogStore.page(source.id, catalogSection.name, limit = Int.MAX_VALUE, offset = 0)
                             val totalCount = mediaCatalogStore.count(source.id, catalogSection.name)
                             Triple(result, firstPage, totalCount)
                         }
@@ -306,7 +306,7 @@ fun PlayerTvApp() {
                                 }
                                 if (catalogSection == CatalogSection.LIVE) selectedCategory = "All"
                                 loadedCatalogs = loadedCatalogs + loadKey
-                                message = "$totalCount ${catalogSection.name.lowercase()} items saved; showing pages of up to 500."
+                                message = "$totalCount ${catalogSection.name.lowercase()} items saved; loaded into the local catalogue and displayed without a 500-item cap."
                             }
                         }
                         .onFailure { if (source.id == activeSourceId) message = it.message ?: "Could not load this source." }
@@ -345,7 +345,7 @@ fun PlayerTvApp() {
                     if (currentSize.toLong() >= total) emptyList()
                     else mediaCatalogStore.page(
                         source.id, catalogSection.name,
-                        limit = 500, offset = currentSize, search = requestedSearch,
+                        limit = Int.MAX_VALUE, offset = currentSize, search = requestedSearch,
                     )
                 }
                 if (source.id == activeSourceId && requestedSearch == search && page.isNotEmpty()) {
@@ -415,7 +415,7 @@ fun PlayerTvApp() {
         if (loadKey !in loadedCatalogs) return@LaunchedEffect
         val requestedSearch = search
         val filteredPage = withContext(Dispatchers.IO) {
-            mediaCatalogStore.page(source.id, catalogSection.name, limit = 500, offset = 0, search = requestedSearch)
+            mediaCatalogStore.page(source.id, catalogSection.name, limit = Int.MAX_VALUE, offset = 0, search = requestedSearch)
         }
         if (source.id != activeSourceId || requestedSearch != search || currentSection.name != section) return@LaunchedEffect
         catalog = when (catalogSection) {
