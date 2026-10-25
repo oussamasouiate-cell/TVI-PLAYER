@@ -298,6 +298,9 @@ fun PlayerTvApp() {
     var search by rememberSaveable { mutableStateOf("") }
     var selectedMedia by remember { mutableStateOf<MediaEntry?>(null) }
     var selectedDetails by remember { mutableStateOf<MediaEntry?>(null) }
+    var selectedTrailerYoutubeId by rememberSaveable { mutableStateOf("") }
+    var trailerSearchBusy by remember { mutableStateOf(false) }
+    var trailerSearchMessage by remember { mutableStateOf("") }
     var organizingChannel by remember { mutableStateOf<MediaEntry?>(null) }
     var pendingSeries by remember { mutableStateOf<MediaEntry?>(null) }
     var episodes by remember { mutableStateOf<List<MediaEntry>>(emptyList()) }
@@ -666,6 +669,9 @@ fun PlayerTvApp() {
         if (selectedKidsYoutubeId.isNotBlank()) {
             KidsYouTubePlayerDialog(videoId = selectedKidsYoutubeId, onDismiss = { selectedKidsYoutubeId = "" })
         }
+        if (selectedTrailerYoutubeId.isNotBlank() && !kidsModeActive) {
+            YouTubeTrailerDialog(videoId = selectedTrailerYoutubeId, onDismiss = { selectedTrailerYoutubeId = "" })
+        }
         if (needsInitialSetup) {
             InitialSetupScreen(
                 savedPremiumCode = premiumCode,
@@ -1025,6 +1031,21 @@ fun PlayerTvApp() {
                         selectedMedia = media
                     },
                     onBrowseEpisodes = { selectedDetails = null },
+                    trailerSearchBusy = trailerSearchBusy,
+                    trailerSearchMessage = trailerSearchMessage,
+                    onFindTrailer = { item ->
+                        if (!kidsModeActive) scope.launch {
+                            trailerSearchBusy = true
+                            trailerSearchMessage = ""
+                            runCatching { withContext(Dispatchers.IO) { searchYouTubeTrailer(item) } }
+                                .onSuccess { videoId ->
+                                    if (videoId.isNullOrBlank()) trailerSearchMessage = "ما لقيناش تريلر مناسب لهاد العنوان."
+                                    else selectedTrailerYoutubeId = videoId
+                                }
+                                .onFailure { trailerSearchMessage = it.message ?: "تعذر البحث عن التريلر." }
+                            trailerSearchBusy = false
+                        }
+                    },
                     onDownload = {
                         scope.launch {
                             runCatching { withContext(Dispatchers.IO) { offlineDownloadStore.enqueue(media) } }
@@ -2484,6 +2505,9 @@ private fun MediaDetailsDialog(
     onDismiss: () -> Unit,
     onPlay: () -> Unit,
     onBrowseEpisodes: () -> Unit,
+    trailerSearchBusy: Boolean = false,
+    trailerSearchMessage: String = "",
+    onFindTrailer: (MediaEntry) -> Unit = {},
     onDownload: () -> Unit,
 ) {
     val metadata = listOf(
@@ -2554,6 +2578,12 @@ private fun MediaDetailsDialog(
                         )
                         if (isSeries) {
                             Text("Open the episodes list to browse available seasons and episodes.", color = TextMuted, fontSize = 12.sp)
+                        }
+                        if (entry.kind == MediaKind.MOVIE || entry.kind == MediaKind.SERIES) {
+                            OutlinedButton(onClick = { onFindTrailer(entry) }, enabled = !trailerSearchBusy) {
+                                Text(if (trailerSearchBusy) "Searching trailer…" else "▶ Find trailer")
+                            }
+                            if (trailerSearchMessage.isNotBlank()) Text(trailerSearchMessage, color = TextMuted, fontSize = 12.sp)
                         }
                     }
                 }
