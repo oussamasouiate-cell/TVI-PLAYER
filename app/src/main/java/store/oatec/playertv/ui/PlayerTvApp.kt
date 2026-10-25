@@ -1249,6 +1249,7 @@ private fun InitialSetupScreen(
                                 isXtream && (username.isBlank() || password.isBlank()) -> error = "دخل Username وPassword ديال Xtream."
                                 isXtreamPlaylistUrl && (resolvedSource.serverUrl.isBlank() || resolvedSource.username.isBlank() || resolvedSource.password.isBlank()) -> error = "رابط Xtream M3U ناقص معلومات الدخول."
                                 else -> onComplete(premiumCode.trim(), resolvedSource)
+                            }
                         },
                         modifier = Modifier.weight(1f).height(if (compactLandscape) 42.dp else 48.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color.White),
