@@ -197,6 +197,7 @@ private fun activateOatecCode(context: Context, code: String): PlayerSource {
         }
         val primary = response.optJSONObject("config")?.optJSONObject("primary")
             ?: throw IOException("السيرفر ما رجّعش إعدادات المصدر للحساب.")
+        val sourceType = primary.optString("type").trim().lowercase()
         val server = primary.optString("server").trim().trimEnd('/')
         val username = primary.optString("username").trim()
         val password = primary.optString("password")
@@ -208,7 +209,13 @@ private fun activateOatecCode(context: Context, code: String): PlayerSource {
         val m3uUri = runCatching { Uri.parse(m3uUrl) }.getOrNull()
         val validM3u = !m3uUri?.host.isNullOrBlank() && m3uUri?.scheme in setOf("http", "https")
         when {
-            validXtream -> PlayerSource(
+            sourceType == "m3u" && validM3u -> PlayerSource(
+                id = UUID.randomUUID().toString(),
+                name = "OATEC Subscription",
+                type = SourceType.M3U,
+                serverUrl = m3uUrl,
+            )
+            sourceType == "xtream" && validXtream -> PlayerSource(
                 id = UUID.randomUUID().toString(),
                 name = "OATEC Subscription",
                 type = SourceType.XTREAM,
@@ -216,14 +223,22 @@ private fun activateOatecCode(context: Context, code: String): PlayerSource {
                 username = username,
                 password = password,
             )
-            validM3u -> PlayerSource(
+            sourceType.isBlank() && validXtream -> PlayerSource(
+                id = UUID.randomUUID().toString(),
+                name = "OATEC Subscription",
+                type = SourceType.XTREAM,
+                serverUrl = server,
+                username = username,
+                password = password,
+            )
+            sourceType.isBlank() && validM3u -> PlayerSource(
                 id = UUID.randomUUID().toString(),
                 name = "OATEC Subscription",
                 type = SourceType.M3U,
                 serverUrl = m3uUrl,
             )
             else -> throw IOException(
-                "كود التفعيل صحيح، ولكن الحساب فلوحة الأدمن ما فيه لا بيانات Xtream كاملة ولا رابط M3U صالح. راجع إعدادات الحساب."
+                "كود التفعيل صحيح، ولكن نوع المصدر أو بياناته فلوحة الأدمن غير متطابقة. تأكد أن الحساب مضبوط على M3U مع رابط صالح، أو Xtream مع Server وUsername وPassword."
             )
         }
     } finally { connection.disconnect() }
