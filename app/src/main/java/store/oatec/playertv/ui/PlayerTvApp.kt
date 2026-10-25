@@ -102,6 +102,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
@@ -2947,6 +2948,30 @@ private fun PlaybackDialog(
     var error by remember { mutableStateOf("") }
     var showList by remember { mutableStateOf(false) }
     var showQualityDialog by remember { mutableStateOf(false) }
+    var subtitleMessage by remember { mutableStateOf("") }
+    val subtitlePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null && activeEngine == "exoplayer") {
+            runCatching {
+                runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                val path = uri.lastPathSegment.orEmpty().lowercase()
+                val mime = when {
+                    path.endsWith(".vtt") -> MimeTypes.TEXT_VTT
+                    path.endsWith(".ttml") || path.endsWith(".xml") -> MimeTypes.APPLICATION_TTML
+                    else -> MimeTypes.APPLICATION_SUBRIP
+                }
+                val subtitle = MediaItem.SubtitleConfiguration.Builder(uri).setMimeType(mime)
+                    .setLanguage("und").setLabel("External subtitle").build()
+                val mediaItem = MediaItem.Builder().setUri(entry.streamUrl).setSubtitleConfigurations(listOf(subtitle)).build()
+                val position = player.currentPosition.coerceAtLeast(0L)
+                player.setMediaItem(mediaItem, position)
+                player.prepare()
+                player.playWhenReady = true
+                subtitleMessage = "External subtitle loaded. Enable it in the player's subtitle menu if needed."
+            }.onFailure { subtitleMessage = it.localizedMessage ?: "Could not load this subtitle file." }
+        } else if (uri != null) {
+            subtitleMessage = "External subtitle file selection is currently supported with ExoPlayer."
+        }
+    }
     val qualityOptions = remember(entry.id, channels) {
         if (entry.kind != MediaKind.LIVE) emptyList()
         else channels.filter { it.kind == MediaKind.LIVE && sameChannelIdentity(it, entry) }
@@ -3148,6 +3173,9 @@ private fun PlaybackDialog(
                 }
             }
             Row(Modifier.align(Alignment.TopEnd).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (entry.kind != MediaKind.LIVE) {
+                    OutlinedButton(onClick = { subtitlePicker.launch(arrayOf("text/*", "application/x-subrip", "application/octet-stream")) }) { Text("Load subtitles") }
+                }
                 if (entry.kind == MediaKind.LIVE && qualityOptions.size > 1) {
                     OutlinedButton(onClick = { showQualityDialog = true }) { Text("Choose quality") }
                 }
@@ -3155,6 +3183,11 @@ private fun PlaybackDialog(
                     OutlinedButton(onClick = { showList = !showList }) { Text(if (showList) "Hide channels" else "Channels") }
                 }
                 OutlinedButton(onClick = onDismiss) { Text("Close") }
+            }
+            if (subtitleMessage.isNotBlank()) {
+                Text(subtitleMessage, modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
+                    .background(Ink.copy(alpha = 0.88f), RoundedCornerShape(8.dp)).padding(10.dp),
+                    color = TextMain, fontSize = 12.sp)
             }
             if (loading) CircularProgressIndicator(Modifier.align(Alignment.Center), color = Lime)
             if (error.isNotBlank()) {
