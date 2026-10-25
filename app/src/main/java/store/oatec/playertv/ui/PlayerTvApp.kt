@@ -2732,9 +2732,12 @@ private fun AddSourceDialog(onDismiss: () -> Unit, onSave: (PlayerSource) -> Uni
                 OutlinedTextField(name, { name = it }, label = { Text("Source name") }, singleLine = true)
                 OutlinedTextField(url, { url = it }, label = { Text(if (type == SourceType.M3U.name) "M3U URL" else "Server URL") }, singleLine = true)
                 OutlinedTextField(epgUrl, { epgUrl = it }, label = { Text("EPG XMLTV URL (optional)") }, singleLine = true)
-                if (type == SourceType.XTREAM.name) {
-                    OutlinedTextField(username, { username = it }, label = { Text("Username") }, singleLine = true)
-                    OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+                if (type == SourceType.XTREAM.name || type == SourceType.M3U.name) {
+                    OutlinedTextField(username, { username = it }, label = { Text("Username (optional for M3U)") }, singleLine = true)
+                    OutlinedTextField(password, { password = it }, label = { Text("Password (optional for M3U)") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+                    if (type == SourceType.M3U.name) {
+                        Text("If you enter a server address instead of a full playlist URL, the app can build the get.php M3U link using these credentials.", color = TextMuted, fontSize = 10.sp)
+                    }
                 }
                 if (url.startsWith("http://", true)) Text("HTTP is unencrypted. Prefer HTTPS when your provider supports it.", color = ErrorRed, fontSize = 11.sp)
                 if (error.isNotBlank()) Text(error, color = ErrorRed, fontSize = 12.sp)
@@ -2746,18 +2749,33 @@ private fun AddSourceDialog(onDismiss: () -> Unit, onSave: (PlayerSource) -> Uni
                 if (name.isBlank()) error = "Enter a source name."
                 else if (parsed.host.isNullOrBlank() || parsed.scheme !in setOf("http", "https")) error = "Enter a valid HTTP or HTTPS URL."
                 else if (type == SourceType.XTREAM.name && (username.isBlank() || password.isBlank())) error = "Enter the provider username and password."
+                else if (type == SourceType.M3U.name && (parsed.lastPathSegment.equals("get.php", true) || parsed.lastPathSegment.equals("player_api.php", true)) && (username.isBlank() || password.isBlank()) && parsed.getQueryParameter("username").isNullOrBlank()) error = "Enter the provider username and password for this playlist URL."
                 else if (epgUrl.isNotBlank() && (Uri.parse(epgUrl.trim()).host.isNullOrBlank() || Uri.parse(epgUrl.trim()).scheme !in setOf("http", "https"))) error = "Enter a valid HTTP or HTTPS EPG URL."
-                else onSave(
-                    PlayerSource(
-                        id = UUID.randomUUID().toString(),
-                        name = name.trim(),
-                        type = SourceType.valueOf(type),
-                        serverUrl = url.trim(),
-                        username = username.trim(),
-                        password = password,
-                        epgUrl = epgUrl.trim(),
-                    ),
-                )
+                else {
+                    val enteredUrl = url.trim()
+                    val queryUser = parsed.getQueryParameter("username").orEmpty().ifBlank { username.trim() }
+                    val queryPassword = parsed.getQueryParameter("password").orEmpty().ifBlank { password }
+                    val finalUrl = if (type == SourceType.M3U.name &&
+                        !parsed.lastPathSegment.equals("get.php", true) &&
+                        !parsed.lastPathSegment.equals("playlist.m3u", true) &&
+                        queryUser.isNotBlank() && queryPassword.isNotBlank()
+                    ) {
+                        enteredUrl.trimEnd('/') + "/get.php?username=" +
+                            Uri.encode(queryUser) + "&password=" + Uri.encode(queryPassword) +
+                            "&type=m3u_plus&output=ts"
+                    } else enteredUrl
+                    onSave(
+                        PlayerSource(
+                            id = UUID.randomUUID().toString(),
+                            name = name.trim(),
+                            type = SourceType.valueOf(type),
+                            serverUrl = finalUrl,
+                            username = username.trim(),
+                            password = password,
+                            epgUrl = epgUrl.trim(),
+                        ),
+                    )
+                }
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
