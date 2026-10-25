@@ -452,7 +452,8 @@ fun PlayerTvApp() {
             mediaCatalogStore.categories(source.id, CatalogSection.LIVE.name)
         }
         if (source.id == activeSourceId) {
-            liveCategoryNames = (categories + preferences.customCategories()).distinct().sortedBy { it.lowercase() }
+            // Provider categories can be used as SQL filters; custom categories are applied locally.
+            liveCategoryNames = categories.distinct().sortedBy { it.lowercase() }
         }
     }
 
@@ -665,7 +666,13 @@ fun PlayerTvApp() {
                             busy = busy,
                             catalogProgress = catalogProgress,
                             catalogLoadedItems = catalogLoadedItems,
-                            onCategory = { selectedCategory = it },
+                            onCategory = {
+                                if (selectedCategory != it) {
+                                    selectedCategory = it
+                                    // Clear the previous category while its first page loads.
+                                    catalog = catalog.copy(liveChannels = emptyList())
+                                }
+                            },
                             onLoadMore = { loadMore(Section.LIVE) },
                             onPlay = {
                                 selectedChannelId = it.id
