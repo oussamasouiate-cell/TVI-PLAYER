@@ -130,17 +130,11 @@ import io.github.yuroyami.libmpvkt.view.MpvView
 import coil.compose.AsyncImage
 import java.io.File
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.UUID
-import kotlinx.coroutines.Dispatchers
-import org.json.JSONObject
 import org.json.JSONArray
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.runtime.snapshotFlow
