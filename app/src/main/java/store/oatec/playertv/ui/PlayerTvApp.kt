@@ -3578,20 +3578,20 @@ private fun KidsDashboard(
 @Composable
 private fun KidsYouTubePlayerDialog(videoId: String, onDismiss: () -> Unit) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var customView by remember { mutableStateOf<android.view.View?>(null) }
+    var customViewCallback by remember { mutableStateOf<android.webkit.WebChromeClient.CustomViewCallback?>(null) }
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-        ),
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
-        // Open the selected poster directly in a full-screen player, without
-        // the YouTube website chrome, Shorts rail, or app-opening banner.
         AndroidView(
             modifier = Modifier.fillMaxSize().background(Color.Black),
             factory = { context ->
-                WebView(context).apply {
+                val root = android.widget.FrameLayout(context).apply {
+                    setBackgroundColor(android.graphics.Color.BLACK)
+                }
+                val webView = WebView(context).apply {
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     settings.mediaPlaybackRequiresUserGesture = false
@@ -3600,17 +3600,77 @@ private fun KidsYouTubePlayerDialog(videoId: String, onDismiss: () -> Unit) {
                     settings.loadWithOverviewMode = true
                     settings.useWideViewPort = true
                     webViewClient = WebViewClient()
+                    webChromeClient = object : android.webkit.WebChromeClient() {
+                        override fun onShowCustomView(view: android.view.View?, callback: CustomViewCallback?) {
+                            if (view == null) return
+                            customViewCallback?.onCustomViewHidden()
+                            customView = view
+                            customViewCallback = callback
+                            this@apply.visibility = android.view.View.GONE
+                            (view.parent as? android.view.ViewGroup)?.removeView(view)
+                            root.addView(view, android.widget.FrameLayout.LayoutParams(
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                            ))
+                            val activity = generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }
+                                .filterIsInstance<Activity>().firstOrNull()
+                            activity?.window?.decorView?.systemUiVisibility =
+                                (android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                                    or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                                    or android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION)
+                        }
+
+                        override fun onHideCustomView() {
+                            customView?.let { root.removeView(it) }
+                            customView = null
+                            customViewCallback?.onCustomViewHidden()
+                            customViewCallback = null
+                            this@apply.visibility = android.view.View.VISIBLE
+                        }
+                    }
                     webViewRef = this
-                    loadUrl(
-                        "https://www.youtube-nocookie.com/embed/" + videoId +
-                            "?autoplay=1&playsinline=0&fs=1&controls=1&rel=0"
-                    )
                 }
+                root.addView(webView, android.widget.FrameLayout.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                ))
+                val html = """
+                    <!doctype html>
+                    <html>
+                    <head>
+                      <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+                      <style>html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden}
+                      iframe{position:absolute;inset:0;width:100%;height:100%;border:0}</style>
+                    </head>
+                    <body>
+                      <iframe
+                        src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=0&fs=1&controls=1&rel=0&origin=https%3A%2F%2Fwww.youtube-nocookie.com"
+                        title="YouTube video player"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowfullscreen>
+                      </iframe>
+                    </body>
+                    </html>
+                """.trimIndent()
+                webView.loadDataWithBaseURL("https://www.youtube-nocookie.com/", html, "text/html", "UTF-8", null)
+                root
             },
-            onRelease = { view ->
-                view.stopLoading()
-                view.destroy()
-                if (webViewRef === view) webViewRef = null
+            onRelease = { root ->
+                val activity = generateSequence(root.context) { (it as? android.content.ContextWrapper)?.baseContext }
+                    .filterIsInstance<Activity>().firstOrNull()
+                activity?.window?.decorView?.systemUiVisibility = 0
+                webViewRef?.let { view ->
+                    view.stopLoading()
+                    view.webChromeClient = null
+                    view.webViewClient = WebViewClient()
+                    view.destroy()
+                }
+                webViewRef = null
+                customView = null
+                customViewCallback = null
             },
         )
     }
