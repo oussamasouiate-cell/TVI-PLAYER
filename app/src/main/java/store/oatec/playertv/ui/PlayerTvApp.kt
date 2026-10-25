@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.res.Configuration
 import android.content.Intent
+import android.os.Build
 import android.net.Uri
 import android.view.KeyEvent as AndroidKeyEvent
 import android.webkit.WebView
@@ -117,8 +118,11 @@ import io.github.yuroyami.libmpvkt.view.MpvView
 import coil.compose.AsyncImage
 import java.io.File
 import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import org.json.JSONObject
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -154,7 +158,65 @@ private val TextMuted = Color(0xFF9DA5B1)
 private val ErrorRed = Color(0xFFFF8177)
 private const val CHANNEL_INFO_DURATION_MS = 5_000L
 private const val CATALOG_PAGE_SIZE = 500
+private const val PLAYER_API_BASE_URL = "https://admin.oatec.store/api/player"
 
+private fun activateOatecCode(context: Context, code: String): PlayerSource {
+    val prefs = context.getSharedPreferences("oatec_activation", Context.MODE_PRIVATE)
+    val deviceId = prefs.getString("device_id", null) ?: UUID.randomUUID().toString().also {
+        prefs.edit().putString("device_id", it).apply()
+    }
+    val payload = JSONObject()
+        .put("code", code)
+        .put("device_id", deviceId)
+        .put("device_name", (Build.MANUFACTURER + " " + Build.MODEL).trim().take(255))
+        .put("platform", "android")
+        .put("app_version", "1.0.0")
+    val connection = (URL(PLAYER_API_BASE_URL + "/activate-by-code").openConnection() as HttpURLConnection).apply {
+        requestMethod = "POST"
+        connectTimeout = 12000
+        readTimeout = 15000
+        doOutput = true
+        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        setRequestProperty("Accept", "application/json")
+    }
+    try {
+        connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+        val status = connection.responseCode
+        val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+        val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+        val response = runCatching { JSONObject(body) }.getOrNull()
+        if (status !in 200..299 || response?.optBoolean("ok") != true) {
+            val serverError = response?.optString("error").orEmpty()
+            throw IOException(when {
+                status == 401 -> "كود التفعيل غير صحيح أو سالات الصلاحية ديالو."
+                status == 403 -> "الاشتراك ديالك ماشي فعّال أو سالات المدة ديالو."
+                status == 409 -> "هاد الكود مربوط بجهاز آخر."
+                serverError.isNotBlank() -> serverError
+                else -> "تعذر التحقق من كود التفعيل (HTTP " + status + ")."
+            })
+        }
+        val primary = response.optJSONObject("config")?.optJSONObject("primary")
+            ?: throw IOException("السيرفر ما رجّعش معلومات Xtream للحساب.")
+        val server = primary.optString("server").trim().trimEnd('/')
+        val username = primary.optString("username").trim()
+        val password = primary.optString("password")
+        if (server.isBlank() || username.isBlank() || password.isBlank()) {
+            throw IOException("الكود صحيح، ولكن الحساب فلوحة الأدمن ناقصو Server URL أو Username أو Password ديال Xtream.")
+        }
+        val parsed = runCatching { Uri.parse(server) }.getOrNull()
+        if (parsed?.host.isNullOrBlank() || parsed?.scheme !in setOf("http", "https")) {
+            throw IOException("رابط Xtream المرتبط بالحساب غير صالح. راجع إعدادات الحساب فلوحة الأدمن.")
+        }
+        return PlayerSource(
+            id = UUID.randomUUID().toString(),
+            name = "OATEC Subscription",
+            type = SourceType.XTREAM,
+            serverUrl = server,
+            username = username,
+            password = password,
+        )
+    } finally { connection.disconnect() }
+}
 private enum class Section(val label: String) {
     HOME("Home"), LIVE("Live TV"), MOVIES("Movies"), SERIES("Series"), DOWNLOADS("Downloads"), SOURCES("Sources"), SETTINGS("Settings"),
 }
@@ -561,6 +623,7 @@ fun PlayerTvApp() {
                 onComplete = { code, source ->
                     sourceStore.savePremiumCode(code)
                     premiumCode = code
+                    sources.removeAll { it.name == "OATEC Subscription" }
                     sources += source
                     sourceStore.save(sources)
                     activeSourceId = source.id
@@ -943,6 +1006,8 @@ private fun InitialSetupScreen(
     var username by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var error by rememberSaveable { mutableStateOf("") }
+    var activationBusy by rememberSaveable { mutableStateOf(false) }
+    val activationScope = rememberCoroutineScope()
     val isXtream = sourceType == SourceType.XTREAM.name
     val accent = Color(0xFFE50920)
     val panel = Color(0xFF111111)
@@ -1051,7 +1116,7 @@ private fun InitialSetupScreen(
                 horizontalAlignment = Alignment.End,
             ) {
                 Text("OATEC PREMIUM CODE", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Black)
-                Text("واجهة التفعيل المميز غادي نطوروها فمرحلة لاحقة.", color = Color(0xFFBDBDBD), fontSize = 13.sp)
+                Text("دخل كود التفعيل اللي توصّلتي به من OATEC باش نربطو الحساب ديالك أوتوماتيكياً.", color = Color(0xFFBDBDBD), fontSize = 13.sp)
                 OutlinedTextField(
                     value = premiumCode,
                     onValueChange = { premiumCode = it; error = "" },
@@ -1063,12 +1128,32 @@ private fun InitialSetupScreen(
                 )
                 if (error.isNotBlank()) Text(error, color = ErrorRed, fontSize = 12.sp)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { entryScreen = "welcome" }, modifier = Modifier.weight(1f)) { Text("رجوع") }
+                    OutlinedButton(onClick = { entryScreen = "welcome"; error = "" }, modifier = Modifier.weight(1f), enabled = !activationBusy) { Text("رجوع") }
                     Button(
-                        onClick = { error = "خدمة التفعيل المميز غير مفعلة بعد. اختار STANDARD PLAYER للمتابعة." },
+                        onClick = {
+                            val normalizedCode = premiumCode.trim().uppercase()
+                            if (normalizedCode.isBlank()) error = "دخل كود التفعيل ديالك."
+                            else {
+                                activationBusy = true
+                                error = ""
+                                activationScope.launch {
+                                    try {
+                                        val source = withContext(Dispatchers.IO) { activateOatecCode(context, normalizedCode) }
+                                        premiumCode = normalizedCode
+                                        onComplete(normalizedCode, source)
+                                    } catch (e: Exception) {
+                                        error = e.message ?: "تعذر التفعيل. تأكد من الكود والاتصال بالإنترنت."
+                                    } finally { activationBusy = false }
+                                }
+                            }
+                        },
                         modifier = Modifier.weight(1f),
+                        enabled = !activationBusy,
                         colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color.White),
-                    ) { Text("تفعيل", fontWeight = FontWeight.Bold) }
+                    ) {
+                        if (activationBusy) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else Text("تفعيل وربط الحساب", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         } else {
