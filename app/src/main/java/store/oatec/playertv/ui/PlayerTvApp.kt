@@ -212,6 +212,38 @@ fun PlayerTvApp() {
     var epgClock by remember { mutableStateOf(System.currentTimeMillis()) }
     val scope = rememberCoroutineScope()
     val currentSection = Section.entries.firstOrNull { it.name == section } ?: Section.LIVE
+    val sectionHistory = remember { mutableStateListOf<Section>() }
+
+    fun navigateTo(target: Section) {
+        val current = Section.entries.firstOrNull { it.name == section } ?: Section.LIVE
+        if (current != target) {
+            sectionHistory.add(current)
+            if (sectionHistory.size > 20) sectionHistory.removeAt(0)
+        }
+        section = target.name
+        selectedCategory = "All"
+        search = ""
+        selectedMedia = null
+        selectedDetails = null
+    }
+
+    fun goBack() {
+        when {
+            selectedDetails != null -> selectedDetails = null
+            selectedMedia != null -> selectedMedia = null
+            pendingSeries != null -> { pendingSeries = null; episodes = emptyList(); episodesBusy = false }
+            sectionHistory.isNotEmpty() -> {
+                val previous = sectionHistory.removeAt(sectionHistory.lastIndex)
+                section = previous.name
+                selectedCategory = "All"
+                search = ""
+                selectedMedia = null
+                selectedDetails = null
+            }
+            currentSection != Section.LIVE -> section = Section.LIVE.name
+            else -> (context as? Activity)?.finish()
+        }
+    }
 
     // Keep Home navigation lightweight: clear transient detail/player state immediately,
     // rather than leaving episode lists and selection state attached to the previous screen.
@@ -632,7 +664,7 @@ fun PlayerTvApp() {
                 HomeDashboard(
                     compact = compactLandscape,
                     sourceName = activeSource?.name,
-                    onSelect = { section = it.name; selectedCategory = "All"; search = ""; selectedMedia = null; selectedDetails = null },
+                    onSelect = { navigateTo(it) },
                     onExit = { (context as? Activity)?.finishAndRemoveTask() },
                 )
             } else {
@@ -645,7 +677,7 @@ fun PlayerTvApp() {
                         sourceName = activeSource?.name,
                         compact = compactLandscape,
                         onSelect = { section = it.name; selectedCategory = "All"; search = ""; selectedMedia = null; selectedDetails = null },
-                        onHome = { goHome() },
+                        onHome = { goBack() },
                         onExit = { (context as? Activity)?.finishAndRemoveTask() },
                     )
                 }
@@ -754,7 +786,7 @@ fun PlayerTvApp() {
                             sources = sources,
                             activeId = activeSourceId,
                             busy = busy,
-                            onSelect = { source -> activeSourceId = source.id; section = Section.LIVE.name },
+                            onSelect = { source -> activeSourceId = source.id; navigateTo(Section.LIVE) },
                             onRefresh = { source -> refresh(source, Section.LIVE, force = true) },
                             onDelete = { source ->
                                 sources.remove(source)
@@ -772,7 +804,7 @@ fun PlayerTvApp() {
                                 if (enabled) section = Section.HOME.name
                             },
                             aboutRepository = aboutRepository,
-                            onManageSources = { section = Section.SOURCES.name },
+                            onManageSources = { navigateTo(Section.SOURCES) },
                             premiumCode = premiumCode,
                             onSavePremiumCode = { code ->
                                 sourceStore.savePremiumCode(code)
