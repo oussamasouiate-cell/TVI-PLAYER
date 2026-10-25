@@ -177,6 +177,7 @@ fun PlayerTvApp() {
     // Open directly on the live channel list; users can switch straight to Movies, Series, or Settings.
     var section by remember { mutableStateOf(Section.LIVE.name) }
     var selectedCategory by rememberSaveable { mutableStateOf("All") }
+    var liveCategoryNames by remember(activeSourceId) { mutableStateOf<List<String>>(emptyList()) }
     var search by rememberSaveable { mutableStateOf("") }
     var selectedMedia by remember { mutableStateOf<MediaEntry?>(null) }
     var selectedDetails by remember { mutableStateOf<MediaEntry?>(null) }
@@ -345,11 +346,17 @@ fun PlayerTvApp() {
                     // continuation offset. The query uses the same search predicate,
                     // so search results continue from the correct row rather than
                     // restarting or skipping items.
-                    val total = mediaCatalogStore.count(source.id, catalogSection.name, search = requestedSearch)
+                    val categoryFilter = selectedCategory.takeIf {
+                        catalogSection == CatalogSection.LIVE && it in liveCategoryNames
+                    }
+                    val total = mediaCatalogStore.count(
+                        source.id, catalogSection.name, search = requestedSearch, category = categoryFilter,
+                    )
                     if (currentSize.toLong() >= total) emptyList()
                     else mediaCatalogStore.page(
                         source.id, catalogSection.name,
-                        limit = CATALOG_PAGE_SIZE, offset = currentSize, search = requestedSearch,
+                        limit = CATALOG_PAGE_SIZE, offset = currentSize,
+                        search = requestedSearch, category = categoryFilter,
                     )
                 }
                 if (source.id == activeSourceId && requestedSearch == search && page.isNotEmpty()) {
@@ -407,7 +414,7 @@ fun PlayerTvApp() {
         }
     }
 
-    LaunchedEffect(activeSourceId, section, search, loadedCatalogs) {
+    LaunchedEffect(activeSourceId, section, search, loadedCatalogs, selectedCategory, preferenceRevision) {
         val source = sources.firstOrNull { it.id == activeSourceId } ?: return@LaunchedEffect
         val catalogSection = when (currentSection) {
             Section.LIVE -> CatalogSection.LIVE
@@ -418,14 +425,34 @@ fun PlayerTvApp() {
         val loadKey = "${source.id}:${catalogSection.name}"
         if (loadKey !in loadedCatalogs) return@LaunchedEffect
         val requestedSearch = search
-        val filteredPage = withContext(Dispatchers.IO) {
-            mediaCatalogStore.page(source.id, catalogSection.name, limit = CATALOG_PAGE_SIZE, offset = 0, search = requestedSearch)
+        val requestedCategory = selectedCategory
+        val categoryFilter = requestedCategory.takeIf {
+            catalogSection == CatalogSection.LIVE && it in liveCategoryNames
         }
-        if (source.id != activeSourceId || requestedSearch != search || currentSection.name != section) return@LaunchedEffect
+        val filteredPage = withContext(Dispatchers.IO) {
+            mediaCatalogStore.page(
+                source.id, catalogSection.name, limit = CATALOG_PAGE_SIZE, offset = 0,
+                search = requestedSearch, category = categoryFilter,
+            )
+        }
+        if (source.id != activeSourceId || requestedSearch != search || currentSection.name != section ||
+            selectedCategory != requestedCategory
+        ) return@LaunchedEffect
         catalog = when (catalogSection) {
             CatalogSection.LIVE -> catalog.copy(liveChannels = applyKidsModeFilter(filteredPage, preferences))
             CatalogSection.MOVIES -> catalog.copy(movies = applyKidsModeFilter(filteredPage, preferences))
             CatalogSection.SERIES -> catalog.copy(series = applyKidsModeFilter(filteredPage, preferences))
+        }
+    }
+
+    LaunchedEffect(activeSourceId, loadedCatalogs) {
+        val source = sources.firstOrNull { it.id == activeSourceId } ?: return@LaunchedEffect
+        if ("${source.id}:LIVE" !in loadedCatalogs) return@LaunchedEffect
+        val categories = withContext(Dispatchers.IO) {
+            mediaCatalogStore.categories(source.id, CatalogSection.LIVE.name)
+        }
+        if (source.id == activeSourceId) {
+            liveCategoryNames = (categories + preferences.customCategories()).distinct().sortedBy { it.lowercase() }
         }
     }
 
@@ -628,6 +655,7 @@ fun PlayerTvApp() {
                             epgClock = epgClock,
                             epgStatus = epgStatus,
                             category = selectedCategory,
+                            availableCategories = liveCategoryNames,
                             search = search,
                             preferences = preferences,
                             preferenceRevision = preferenceRevision,
@@ -1666,6 +1694,7 @@ private fun LiveScreen(
     epgClock: Long,
     epgStatus: String,
     category: String,
+    availableCategories: List<String>,
     search: String,
     preferences: PlayerPreferences,
     preferenceRevision: Int,
@@ -1686,8 +1715,11 @@ private fun LiveScreen(
         visibleChannels(catalog, category, search, preferences)
     }
     var selectedChannel by remember(channels) { mutableStateOf(channels.firstOrNull()) }
-    val categories = remember(catalog.liveChannels, preferenceRevision) {
-        (listOf("All", "Favorites", "Hidden") + catalog.liveChannels.map { preferences.categoryFor(it.id, it.category) }.distinct().sorted() + preferences.customCategories()).distinct()
+    val categories = remember(availableCategories, catalog.liveChannels, preferenceRevision) {
+        (listOf("All", "Favorites", "Hidden") + availableCategories +
+            catalog.liveChannels.map { preferences.categoryFor(it.id, it.category) } +
+            preferences.customCategories()
+        ).filter(String::isNotBlank).distinct()
     }
     val listState = rememberLazyGridState()
     val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
