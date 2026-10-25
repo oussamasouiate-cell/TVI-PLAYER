@@ -208,13 +208,15 @@ private fun activateOatecCode(context: Context, code: String): PlayerSource {
             username.isNotBlank() && password.isNotBlank()
         val m3uUri = runCatching { Uri.parse(m3uUrl) }.getOrNull()
         val validM3u = !m3uUri?.host.isNullOrBlank() && m3uUri?.scheme in setOf("http", "https")
+        // Activation APIs can label an Xtream get.php playlist as M3U.
+        // Convert only this recognizable endpoint; keep normal M3U URLs as M3U.
+        val isXtreamGetPhp = m3uUri?.lastPathSegment.equals("get.php", ignoreCase = true)
+        val urlUsername = m3uUri?.getQueryParameter("username").orEmpty().ifBlank { username }
+        val urlPassword = m3uUri?.getQueryParameter("password").orEmpty().ifBlank { password }
+        val validGetPhpXtream = isXtreamGetPhp && validM3u &&
+            urlUsername.isNotBlank() && urlPassword.isNotBlank()
+        val getPhpBase = if (isXtreamGetPhp) m3uUrl.substringBefore('?').substringBeforeLast('/') else ""
         when {
-            sourceType == "m3u" && validM3u -> PlayerSource(
-                id = UUID.randomUUID().toString(),
-                name = "OATEC Subscription",
-                type = SourceType.M3U,
-                serverUrl = m3uUrl,
-            )
             sourceType == "xtream" && validXtream -> PlayerSource(
                 id = UUID.randomUUID().toString(),
                 name = "OATEC Subscription",
@@ -222,6 +224,20 @@ private fun activateOatecCode(context: Context, code: String): PlayerSource {
                 serverUrl = server,
                 username = username,
                 password = password,
+            )
+            validGetPhpXtream -> PlayerSource(
+                id = UUID.randomUUID().toString(),
+                name = "OATEC Subscription",
+                type = SourceType.XTREAM,
+                serverUrl = getPhpBase,
+                username = urlUsername,
+                password = urlPassword,
+            )
+            sourceType == "m3u" && validM3u -> PlayerSource(
+                id = UUID.randomUUID().toString(),
+                name = "OATEC Subscription",
+                type = SourceType.M3U,
+                serverUrl = m3uUrl,
             )
             sourceType.isBlank() && validXtream -> PlayerSource(
                 id = UUID.randomUUID().toString(),
