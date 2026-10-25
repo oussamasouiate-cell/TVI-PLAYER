@@ -3578,40 +3578,41 @@ private fun KidsDashboard(
 @Composable
 private fun KidsYouTubePlayerDialog(videoId: String, onDismiss: () -> Unit) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(
-            Modifier.fillMaxSize().padding(8.dp),
-            color = Color(0xFF101B36),
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(2.dp, Color(0xFFFFD76A)),
-        ) {
-            Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("▶ YouTube Kids", color = Color(0xFFFFD76A), fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
-                    TextButton(onClick = onDismiss) { Text("رجوع ✕", color = Color.White) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        // Open the selected poster directly in a full-screen player, without
+        // the YouTube website chrome, Shorts rail, or app-opening banner.
+        AndroidView(
+            modifier = Modifier.fillMaxSize().background(Color.Black),
+            factory = { context ->
+                WebView(context).apply {
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.mediaPlaybackRequiresUserGesture = false
+                    settings.allowFileAccess = false
+                    settings.allowContentAccess = false
+                    settings.loadWithOverviewMode = true
+                    settings.useWideViewPort = true
+                    webViewClient = WebViewClient()
+                    webViewRef = this
+                    loadUrl(
+                        "https://www.youtube-nocookie.com/embed/" + videoId +
+                            "?autoplay=1&playsinline=0&fs=1&controls=1&rel=0"
+                    )
                 }
-                AndroidView(
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).background(Color.Black),
-                    factory = { context ->
-                        WebView(context).apply {
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.mediaPlaybackRequiresUserGesture = false
-                            settings.allowFileAccess = false
-                            settings.allowContentAccess = false
-                            webViewClient = WebViewClient()
-                            webViewRef = this
-                            loadUrl("https://www.youtube-nocookie.com/embed/" + videoId + "?autoplay=1&playsinline=1&rel=0")
-                        }
-                    },
-                    onRelease = { view ->
-                        view.stopLoading()
-                        view.destroy()
-                        if (webViewRef === view) webViewRef = null
-                    },
-                )
-            }
-        }
+            },
+            onRelease = { view ->
+                view.stopLoading()
+                view.destroy()
+                if (webViewRef === view) webViewRef = null
+            },
+        )
     }
 }
 
