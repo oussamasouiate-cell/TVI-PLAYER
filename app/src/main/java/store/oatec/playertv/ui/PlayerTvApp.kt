@@ -307,6 +307,7 @@ fun PlayerTvApp() {
     var preferenceRevision by remember { mutableStateOf(0) }
     var message by remember { mutableStateOf("") }
     var showAddSource by remember { mutableStateOf(false) }
+    var selectedKidsYoutubeId by rememberSaveable { mutableStateOf("") }
     var showNumberPad by remember { mutableStateOf(false) }
     var showKidsExitDialog by remember { mutableStateOf(false) }
     var kidsExitPinInput by remember { mutableStateOf("") }
@@ -659,6 +660,9 @@ fun PlayerTvApp() {
             onError = Ink,
         ),
     ) {
+        if (selectedKidsYoutubeId.isNotBlank()) {
+            KidsYouTubePlayerDialog(videoId = selectedKidsYoutubeId, onDismiss = { selectedKidsYoutubeId = "" })
+        }
         if (needsInitialSetup) {
             InitialSetupScreen(
                 savedPremiumCode = premiumCode,
@@ -762,6 +766,7 @@ fun PlayerTvApp() {
                     onSearch = { search = it },
                     onSection = { next -> navigateTo(next); pendingSeries = null },
                     onPlay = { selectedMedia = it },
+                    onPlayYoutube = { videoId -> selectedKidsYoutubeId = videoId },
                     onMovieDetails = { selectedDetails = it },
                     onExit = { kidsExitPinInput = ""; kidsExitPinError = ""; showKidsExitDialog = true },
                     onLoadMore = { loadMore(currentSection) },
@@ -3302,6 +3307,7 @@ private fun KidsDashboard(
     onSearch: (String) -> Unit,
     onSection: (Section) -> Unit,
     onPlay: (MediaEntry) -> Unit,
+    onPlayYoutube: (String) -> Unit,
     onMovieDetails: (MediaEntry) -> Unit,
     onExit: () -> Unit,
     onLoadMore: () -> Unit,
@@ -3412,6 +3418,10 @@ private fun KidsDashboard(
                 }
             }
             if (visible.isEmpty()) {
+                LaunchedEffect(section, movies.size, series.size, channels.size, search) {
+                    // Continue paging when a raw catalogue page contains no child-safe items.
+                    onLoadMore()
+                }
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("🧸 🌟 🚀", fontSize = if (compact) 30.sp else 44.sp)
