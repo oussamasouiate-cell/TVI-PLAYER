@@ -721,7 +721,7 @@ fun PlayerTvApp() {
                         )
                         Section.MOVIES -> MediaScreen(
                             title = "Movies",
-                            onHome = { goHome() },
+                            onHome = { goBack() },
                             onSearch = { search = it },
                             entries = catalog.movies,
                             search = search,
@@ -736,7 +736,7 @@ fun PlayerTvApp() {
                             onFavorite = { item -> preferences.setFavorite(item.id, item.id !in preferences.favorites()); preferenceRevision++ },
                         )
                         Section.SERIES -> SeriesScreen(
-                            onHome = { goHome() },
+                            onHome = { goBack() },
                             onSearch = { search = it },
                             entries = catalog.series,
                             episodes = episodes,
@@ -768,7 +768,7 @@ fun PlayerTvApp() {
                             onPlay = { selectedMedia = it },
                             onFavorite = { item -> preferences.setFavorite(item.id, item.id !in preferences.favorites()); preferenceRevision++ },
                         )
-                        Section.DOWNLOADS -> OfflineDownloadsScreen(store = offlineDownloadStore, onHome = { goHome() }, onPlay = { selectedMedia = it }, onMessage = { message = it })
+                        Section.DOWNLOADS -> OfflineDownloadsScreen(store = offlineDownloadStore, onHome = { goBack() }, onPlay = { selectedMedia = it }, onMessage = { message = it })
                         Section.SOURCES -> SourcesScreen(
                             sources = sources,
                             activeId = activeSourceId,
@@ -784,7 +784,7 @@ fun PlayerTvApp() {
                             onImport = { filePicker.launch(arrayOf("audio/x-mpegurl", "application/vnd.apple.mpegurl", "text/plain", "application/octet-stream")) },
                         )
                         Section.SETTINGS -> SettingsScreen(
-                            onHome = { goHome() },
+                            onHome = { goBack() },
                             preferences = preferences,
                             onKidsModeChanged = { enabled ->
                                 kidsModeActive = enabled
