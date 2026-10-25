@@ -1221,7 +1221,7 @@ private fun InitialSetupScreen(
                             val parsed = Uri.parse(rawUrl)
                             val queryUser = parsed.getQueryParameter("username").orEmpty().trim()
                             val queryPassword = parsed.getQueryParameter("password").orEmpty()
-                            val isXtreamPlaylistUrl = !isXtream &&
+                            val isXtreamPlaylistUrl =
                                 parsed.lastPathSegment.equals("get.php", ignoreCase = true) &&
                                 queryUser.isNotBlank() && queryPassword.isNotBlank()
                             val resolvedSource = if (isXtreamPlaylistUrl) {
