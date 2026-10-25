@@ -261,18 +261,14 @@ fun PlayerTvApp() {
 
     // Keep children inside Kids Mode when Back is pressed, including from LIVE.
     // A normal app cannot block Android Home/Recents without device kiosk/lock-task setup.
-    BackHandler(enabled = kidsModeActive || currentSection != Section.LIVE) {
+    BackHandler(enabled = true) {
         if (kidsModeActive) {
             section = Section.HOME.name
             selectedCategory = "All"
             search = ""
             selectedMedia = null
             selectedDetails = null
-        } else {
-            section = Section.LIVE.name
-            selectedCategory = "All"
-            search = ""
-        }
+        } else goBack()
     }
 
     fun refresh(source: PlayerSource, requestedSection: Section = currentSection, force: Boolean = false) {
@@ -586,9 +582,7 @@ fun PlayerTvApp() {
                             goHome()
                             true
                         }
-                        AndroidKeyEvent.KEYCODE_BACK -> {
-                            if (currentSection != Section.LIVE) { section = Section.LIVE.name; true } else false
-                        }
+                        AndroidKeyEvent.KEYCODE_BACK -> { goBack(); true }
                         AndroidKeyEvent.KEYCODE_CHANNEL_UP -> {
                             if (currentSection == Section.LIVE && catalog.liveChannels.isNotEmpty()) {
                                 val channels = visibleChannels(catalog, selectedCategory, search, preferences)
@@ -647,14 +641,7 @@ fun PlayerTvApp() {
                     channels = applyKidsModeFilter(catalog.liveChannels, preferences),
                     search = search,
                     onSearch = { search = it },
-                    onSection = { next ->
-                        section = next.name
-                        selectedCategory = "All"
-                        search = ""
-                        selectedMedia = null
-                        selectedDetails = null
-                        pendingSeries = null
-                    },
+                    onSection = { next -> navigateTo(next); pendingSeries = null },
                     onPlay = { selectedMedia = it },
                     onMovieDetails = { selectedDetails = it },
                     onExit = { kidsExitPinInput = ""; kidsExitPinError = ""; showKidsExitDialog = true },
@@ -676,7 +663,7 @@ fun PlayerTvApp() {
                         selected = if (currentSection == Section.SOURCES) Section.SETTINGS else currentSection,
                         sourceName = activeSource?.name,
                         compact = compactLandscape,
-                        onSelect = { section = it.name; selectedCategory = "All"; search = ""; selectedMedia = null; selectedDetails = null },
+                        onSelect = { navigateTo(it) },
                         onHome = { goBack() },
                         onExit = { (context as? Activity)?.finishAndRemoveTask() },
                     )
@@ -711,7 +698,7 @@ fun PlayerTvApp() {
                             preferences = preferences,
                             preferenceRevision = preferenceRevision,
                             onSearch = { search = it },
-                            onHome = { goHome() },
+                            onHome = { goBack() },
                             message = message,
                             busy = busy,
                             catalogProgress = catalogProgress,
