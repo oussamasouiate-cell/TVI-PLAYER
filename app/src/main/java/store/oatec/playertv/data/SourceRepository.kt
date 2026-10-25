@@ -428,7 +428,6 @@ class SourceRepository {
                     "Accept",
                     "application/x-mpegURL, application/vnd.apple.mpegurl, audio/mpegurl, text/plain, */*"
                 )
-                connection.setRequestProperty("Accept-Encoding", "gzip")
                 val status = connection.responseCode
                 if (status in 300..399) {
                     if (redirectCount == MAX_REDIRECTS) throw IOException("The source redirected too many times.")
