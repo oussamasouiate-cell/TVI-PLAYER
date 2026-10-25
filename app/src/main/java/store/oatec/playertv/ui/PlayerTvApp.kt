@@ -1759,10 +1759,18 @@ private fun NavigationRail(
                 Text("TVI PLAYER", color = TextMain, fontSize = if (compact) 12.sp else 15.sp, fontWeight = FontWeight.Black, maxLines = 1)
                 if (!sourceName.isNullOrBlank()) Text(sourceName, color = TextMuted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp)) {
+            OutlinedButton(
+                onClick = onHome,
+                modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 76.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+            ) {
                 Text("← Back", fontSize = 10.sp)
             }
-            OutlinedButton(onClick = onExit, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp)) {
+            OutlinedButton(
+                onClick = onExit,
+                modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 76.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+            ) {
                 Text("Exit", fontSize = 10.sp)
             }
         }
@@ -1781,7 +1789,8 @@ private fun NavigationRail(
             ).forEach { (destination, label) ->
                 OutlinedButton(
                     onClick = { onSelect(destination) },
-                    contentPadding = PaddingValues(horizontal = if (compact) 9.dp else 13.dp, vertical = 2.dp),
+                    modifier = Modifier.heightIn(min = 44.dp),
+                    contentPadding = PaddingValues(horizontal = if (compact) 9.dp else 13.dp, vertical = 8.dp),
                     border = BorderStroke(1.dp, if (selected == destination) Lime else Color.White.copy(alpha = 0.18f)),
                     colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
                         contentColor = if (selected == destination) Lime else TextMain,
@@ -3389,7 +3398,7 @@ private fun YouTubeKidsSearchDialog(onDismiss: () -> Unit) {
                     update = { view ->
                         webViewRef = view
                         if (submittedQuery.isNotBlank()) {
-                            val expected = Uri.parse("https://www.youtubekids.com/").buildUpon()
+                            val expected = Uri.parse("https://m.youtube.com/").buildUpon()
                                 .appendPath("search")
                                 .appendQueryParameter("q", submittedQuery)
                                 .build().toString()
