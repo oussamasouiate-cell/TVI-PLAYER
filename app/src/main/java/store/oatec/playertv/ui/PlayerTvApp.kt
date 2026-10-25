@@ -146,6 +146,7 @@ private val TextMain = Color(0xFFF7F7F5)
 private val TextMuted = Color(0xFF9DA5B1)
 private val ErrorRed = Color(0xFFFF8177)
 private const val CHANNEL_INFO_DURATION_MS = 5_000L
+private const val CATALOG_PAGE_SIZE = 500
 
 private enum class Section(val label: String) {
     HOME("Home"), LIVE("Live TV"), MOVIES("Movies"), SERIES("Series"), SOURCES("Sources"), SETTINGS("Settings"),
@@ -253,7 +254,7 @@ fun PlayerTvApp() {
                 // Xtream response is being downloaded. Read it in bounded DB pages.
                 if (source.id == activeSourceId) {
                     val cachedState = withContext(Dispatchers.IO) {
-                        mediaCatalogStore.page(source.id, catalogSection.name, limit = Int.MAX_VALUE, offset = 0) to
+                        mediaCatalogStore.page(source.id, catalogSection.name, limit = CATALOG_PAGE_SIZE, offset = 0) to
                             mediaCatalogStore.count(source.id, catalogSection.name)
                     }
                     val cached = cachedState.first
@@ -295,7 +296,7 @@ fun PlayerTvApp() {
                                 kotlinx.coroutines.delay(450)
                                 loaded
                             }
-                            val firstPage = mediaCatalogStore.page(source.id, catalogSection.name, limit = Int.MAX_VALUE, offset = 0)
+                            val firstPage = mediaCatalogStore.page(source.id, catalogSection.name, limit = CATALOG_PAGE_SIZE, offset = 0)
                             val totalCount = mediaCatalogStore.count(source.id, catalogSection.name)
                             Triple(result, firstPage, totalCount)
                         }
@@ -348,7 +349,7 @@ fun PlayerTvApp() {
                     if (currentSize.toLong() >= total) emptyList()
                     else mediaCatalogStore.page(
                         source.id, catalogSection.name,
-                        limit = Int.MAX_VALUE, offset = currentSize, search = requestedSearch,
+                        limit = CATALOG_PAGE_SIZE, offset = currentSize, search = requestedSearch,
                     )
                 }
                 if (source.id == activeSourceId && requestedSearch == search && page.isNotEmpty()) {
@@ -418,7 +419,7 @@ fun PlayerTvApp() {
         if (loadKey !in loadedCatalogs) return@LaunchedEffect
         val requestedSearch = search
         val filteredPage = withContext(Dispatchers.IO) {
-            mediaCatalogStore.page(source.id, catalogSection.name, limit = Int.MAX_VALUE, offset = 0, search = requestedSearch)
+            mediaCatalogStore.page(source.id, catalogSection.name, limit = CATALOG_PAGE_SIZE, offset = 0, search = requestedSearch)
         }
         if (source.id != activeSourceId || requestedSearch != search || currentSection.name != section) return@LaunchedEffect
         catalog = when (catalogSection) {
@@ -1856,8 +1857,10 @@ private fun MediaScreen(
     val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
     // Fetch every 500-item database page automatically while browsing the full library.
     // The DB import is already complete; this only fills the UI list in bounded chunks.
-    LaunchedEffect(entries.size, selectedShelf, search, title) {
-        if (entries.isNotEmpty() && selectedShelf == "All" && search.isBlank()) onLoadMore()
+    LaunchedEffect(lastVisible, entries.size, selectedShelf, search, title) {
+        if (entries.isNotEmpty() && selectedShelf == "All" &&
+            lastVisible >= gridState.layoutInfo.totalItemsCount - 6
+        ) onLoadMore()
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -2102,7 +2105,9 @@ private fun SeriesScreen(
     val gridState = rememberLazyGridState()
     val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
     LaunchedEffect(lastVisible, entries.size, selectedShelf, search) {
-        if (entries.isNotEmpty() && selectedShelf == "All" && search.isBlank() && lastVisible >= gridState.layoutInfo.totalItemsCount - 6) onLoadMore()
+        if (entries.isNotEmpty() && selectedShelf == "All" &&
+            lastVisible >= gridState.layoutInfo.totalItemsCount - 6
+        ) onLoadMore()
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
