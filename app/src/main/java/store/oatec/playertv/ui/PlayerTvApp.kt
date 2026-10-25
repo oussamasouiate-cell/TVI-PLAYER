@@ -883,6 +883,10 @@ private fun InitialSetupScreen(
     onComplete: (String, PlayerSource) -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val configuration = LocalConfiguration.current
+    val compactLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+        configuration.screenWidthDp < 900
+    var entryScreen by rememberSaveable { mutableStateOf("welcome") }
     var premiumCode by rememberSaveable { mutableStateOf(savedPremiumCode) }
     var sourceType by rememberSaveable { mutableStateOf(SourceType.XTREAM.name) }
     var sourceName by rememberSaveable { mutableStateOf("") }
@@ -891,134 +895,228 @@ private fun InitialSetupScreen(
     var password by rememberSaveable { mutableStateOf("") }
     var error by rememberSaveable { mutableStateOf("") }
     val isXtream = sourceType == SourceType.XTREAM.name
+    val accent = Color(0xFFE50920)
+    val panel = Color(0xFF111111)
+    val spacing = if (compactLandscape) 8.dp else 14.dp
+    val horizontalPadding = if (compactLandscape) 20.dp else 28.dp
 
     Box(
-        Modifier.fillMaxSize().background(Ink),
+        Modifier.fillMaxSize().background(
+            Brush.radialGradient(
+                colors = listOf(Color(0xFF26070A), Color(0xFF090909), Color.Black),
+                center = Offset(0.92f, 0.08f),
+                radius = 1100f,
+            ),
+        ),
         contentAlignment = Alignment.Center,
     ) {
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Surface(
-                    color = Color(0xFF0D1117),
-                    shape = RoundedCornerShape(13.dp),
-                    border = BorderStroke(2.dp, Lime),
-                    modifier = Modifier.size(48.dp),
+        if (entryScreen == "welcome") {
+            Column(
+                Modifier.fillMaxSize().padding(horizontal = horizontalPadding, vertical = if (compactLandscape) 10.dp else 22.dp),
+                verticalArrangement = Arrangement.spacedBy(spacing),
+                horizontalAlignment = Alignment.End,
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End,
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text("IPTV", color = Lime, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("TVI PLAYER", color = Color.White, fontSize = if (compactLandscape) 22.sp else 28.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                        Text("ENTERTAINMENT, REFINED", color = accent, fontSize = if (compactLandscape) 9.sp else 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Surface(color = accent, shape = RoundedCornerShape(14.dp), modifier = Modifier.size(if (compactLandscape) 42.dp else 56.dp)) {
+                        Box(contentAlignment = Alignment.Center) { Text("T", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Black) }
                     }
                 }
-                Column {
-                    Text("OATEC", color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.Black)
-                    Text("PLAYER TV", color = TextMuted, fontSize = 10.sp, letterSpacing = 1.5.sp)
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("شاشتك.\nتجربتك المميزة.", color = Color.White, fontSize = if (compactLandscape) 23.sp else 32.sp, fontWeight = FontWeight.Black, lineHeight = if (compactLandscape) 27.sp else 38.sp)
+                    Text("وجهتك الأنيقة للتلفاز المباشر والأفلام والمسلسلات.", color = Color(0xFFBDBDBD), fontSize = if (compactLandscape) 10.sp else 14.sp)
+                }
+                Row(
+                    Modifier.fillMaxWidth().weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        color = panel,
+                        shape = RoundedCornerShape(20.dp),
+                        border = BorderStroke(1.dp, Color(0xFF393939)),
+                        modifier = Modifier.weight(1f).fillMaxHeight(0.88f)
+                            .clickable { entryScreen = "standard" },
+                    ) {
+                        Box(Modifier.fillMaxSize().padding(if (compactLandscape) 14.dp else 24.dp)) {
+                            Text("◉", color = accent, fontSize = 22.sp, modifier = Modifier.align(Alignment.TopEnd))
+                            Column(Modifier.align(Alignment.CenterEnd), horizontalAlignment = Alignment.End) {
+                                Text("STANDARD PLAYER", color = Color.White, fontSize = if (compactLandscape) 18.sp else 24.sp, fontWeight = FontWeight.ExtraBold)
+                                Text("M3U  •  XTREAM CODES", color = Color(0xFFAAAAAA), fontSize = if (compactLandscape) 9.sp else 11.sp, letterSpacing = 1.sp)
+                            }
+                            Text("→", color = accent, fontSize = 24.sp, modifier = Modifier.align(Alignment.BottomStart))
+                        }
+                    }
+                    Surface(
+                        color = Color(0xFF1B090B),
+                        shape = RoundedCornerShape(20.dp),
+                        border = BorderStroke(1.dp, Color(0xFF512126)),
+                        modifier = Modifier.weight(1.25f).fillMaxHeight(0.88f)
+                            .clickable { entryScreen = "premium" },
+                    ) {
+                        Box(Modifier.fillMaxSize().padding(if (compactLandscape) 14.dp else 24.dp)) {
+                            Text("✦", color = accent, fontSize = 34.sp, modifier = Modifier.align(Alignment.CenterStart))
+                            Column(Modifier.align(Alignment.CenterEnd), horizontalAlignment = Alignment.End) {
+                                Surface(color = Color(0xFF310D12), shape = RoundedCornerShape(50.dp)) {
+                                    Text("PREMIUM", color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Text("OATEC PREMIUM CODE", color = Color.White, fontSize = if (compactLandscape) 17.sp else 25.sp, fontWeight = FontWeight.Black)
+                                Text("SECURE ACTIVATION", color = Color(0xFFAAAAAA), fontSize = 9.sp, letterSpacing = 1.4.sp)
+                            }
+                        }
+                    }
+                }
+                Surface(
+                    color = Color(0xFF090909),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, Color(0xFF333333)),
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://oatec.store/")))
+                    },
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = if (compactLandscape) 8.dp else 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("→", color = accent, fontSize = 20.sp)
+                        Spacer(Modifier.weight(1f))
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text("الإعدادات والمساعدة", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text("الملف الشخصي واللغة والتشغيل", color = Color(0xFFAAAAAA), fontSize = 10.sp)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Text("⚙", color = Color(0xFFBDBDBD), fontSize = 23.sp)
+                    }
                 }
             }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Welcome to PlayerTv", color = TextMain, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                Text("Set up your account and IPTV source", color = TextMuted, fontSize = 12.sp)
-            }
-
-            Column(Modifier.widthIn(max = 620.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("OATEC PREMIUM CODE (OPTIONAL)", color = GoldLight, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+        } else if (entryScreen == "premium") {
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 24.dp).widthIn(max = 560.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.End,
+            ) {
+                Text("OATEC PREMIUM CODE", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Black)
+                Text("واجهة التفعيل المميز غادي نطوروها فمرحلة لاحقة.", color = Color(0xFFBDBDBD), fontSize = 13.sp)
                 OutlinedTextField(
                     value = premiumCode,
                     onValueChange = { premiumCode = it; error = "" },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Premium code (optional)") },
+                    label = { Text("Premium code") },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
                 )
-                Text(
-                    "You can continue without a code. Code verification requires the OATEC activation service.",
-                    color = TextMuted,
-                    fontSize = 10.sp,
-                )
-            }
-
-            HorizontalDivider(Modifier.widthIn(max = 620.dp), color = Color.White.copy(alpha = 0.12f))
-
-            Column(Modifier.widthIn(max = 620.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("IPTV SOURCE", color = GoldLight, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CategoryPill("Xtream Code", isXtream) { sourceType = SourceType.XTREAM.name; error = "" }
-                    CategoryPill("M3U", !isXtream) { sourceType = SourceType.M3U.name; error = "" }
+                if (error.isNotBlank()) Text(error, color = ErrorRed, fontSize = 12.sp)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { entryScreen = "welcome" }, modifier = Modifier.weight(1f)) { Text("رجوع") }
+                    Button(
+                        onClick = { error = "خدمة التفعيل المميز غير مفعلة بعد. اختار STANDARD PLAYER للمتابعة." },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color.White),
+                    ) { Text("تفعيل", fontWeight = FontWeight.Bold) }
                 }
-                OutlinedTextField(
-                    value = sourceName,
-                    onValueChange = { sourceName = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Source name (optional)") },
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = serverUrl,
-                    onValueChange = { serverUrl = it; error = "" },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(if (isXtream) "Xtream server URL" else "M3U playlist URL") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                )
-                if (isXtream) {
-                    OutlinedTextField(
-                        value = username,
-                        onValueChange = { username = it; error = "" },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Username") },
-                        singleLine = true,
-                    )
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it; error = "" },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Password") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                    )
+            }
+        } else {
+            Column(
+                Modifier.fillMaxSize().padding(horizontal = horizontalPadding, vertical = if (compactLandscape) 8.dp else 20.dp),
+                verticalArrangement = Arrangement.spacedBy(if (compactLandscape) 6.dp else 12.dp),
+            ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = { entryScreen = "welcome"; error = "" }) { Text("← رجوع") }
+                    Spacer(Modifier.weight(1f))
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("STANDARD PLAYER", color = Color.White, fontSize = if (compactLandscape) 18.sp else 25.sp, fontWeight = FontWeight.Black)
+                        Text("اختار طريقة الاتصال بمصدر القنوات", color = Color(0xFFBDBDBD), fontSize = if (compactLandscape) 9.sp else 12.sp)
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CategoryPill("Xtream Codes", isXtream) { sourceType = SourceType.XTREAM.name; error = "" }
+                    CategoryPill("M3U URL", !isXtream) { sourceType = SourceType.M3U.name; error = "" }
+                }
+                if (compactLandscape) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SetupField(serverUrl, { serverUrl = it; error = "" }, if (isXtream) "Server URL" else "M3U playlist URL", Modifier.weight(1.6f), uri = true)
+                        SetupField(sourceName, { sourceName = it }, "Source name (optional)", Modifier.weight(1f))
+                    }
+                    if (isXtream) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SetupField(username, { username = it; error = "" }, "Username", Modifier.weight(1f))
+                            SetupField(password, { password = it; error = "" }, "Password", Modifier.weight(1f), password = true)
+                        }
+                    }
+                } else {
+                    SetupField(sourceName, { sourceName = it }, "Source name (optional)", Modifier.fillMaxWidth())
+                    SetupField(serverUrl, { serverUrl = it; error = "" }, if (isXtream) "Server URL" else "M3U playlist URL", Modifier.fillMaxWidth(), uri = true)
+                    if (isXtream) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SetupField(username, { username = it; error = "" }, "Username", Modifier.weight(1f))
+                            SetupField(password, { password = it; error = "" }, "Password", Modifier.weight(1f), password = true)
+                        }
+                    }
                 }
                 if (serverUrl.startsWith("http://", true)) {
-                    Text("HTTP is unencrypted. Use HTTPS when your provider supports it.", color = ErrorRed, fontSize = 10.sp)
+                    Text("HTTP غير مشفر؛ استعمل HTTPS إلا كان متاح.", color = ErrorRed, fontSize = 9.sp)
                 }
-                if (error.isNotBlank()) Text(error, color = ErrorRed, fontSize = 12.sp)
+                if (error.isNotBlank()) Text(error, color = ErrorRed, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.weight(1f, fill = !compactLandscape))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedButton(
                         onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://oatec.store/"))) },
-                        modifier = Modifier.weight(1f).height(48.dp),
-                    ) {
-                        Text("OATEC website", fontSize = 11.sp)
-                    }
+                        modifier = Modifier.weight(1f).height(if (compactLandscape) 42.dp else 48.dp),
+                    ) { Text("OATEC website", fontSize = 11.sp) }
                     Button(
-                    onClick = {
-                        val parsed = Uri.parse(serverUrl.trim())
-                        when {
-                            parsed.host.isNullOrBlank() || parsed.scheme !in setOf("http", "https") -> error = "Enter a valid HTTP or HTTPS source URL."
-                            isXtream && (username.isBlank() || password.isBlank()) -> error = "Enter the Xtream username and password."
-                            else -> onComplete(
-                                premiumCode.trim(),
-                                PlayerSource(
-                                    id = UUID.randomUUID().toString(),
-                                    name = sourceName.trim().ifBlank { if (isXtream) "Xtream source" else "M3U playlist" },
-                                    type = if (isXtream) SourceType.XTREAM else SourceType.M3U,
-                                    serverUrl = serverUrl.trim(),
-                                    username = username.trim(),
-                                    password = password,
-                                ),
-                            )
-                        }
-                    },
-                    modifier = Modifier.weight(1f).height(48.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Ink),
-                ) {
-                    Text("Continue", fontWeight = FontWeight.Bold)
-                    }
+                        onClick = {
+                            val parsed = Uri.parse(serverUrl.trim())
+                            when {
+                                parsed.host.isNullOrBlank() || parsed.scheme !in setOf("http", "https") -> error = "دخل رابط HTTP أو HTTPS صحيح."
+                                isXtream && (username.isBlank() || password.isBlank()) -> error = "دخل Username وPassword ديال Xtream."
+                                else -> onComplete(
+                                    premiumCode.trim(),
+                                    PlayerSource(
+                                        id = UUID.randomUUID().toString(),
+                                        name = sourceName.trim().ifBlank { if (isXtream) "Xtream source" else "M3U playlist" },
+                                        type = if (isXtream) SourceType.XTREAM else SourceType.M3U,
+                                        serverUrl = serverUrl.trim(),
+                                        username = username.trim(),
+                                        password = password,
+                                    ),
+                                )
+                            }
+                        },
+                        modifier = Modifier.weight(1f).height(if (compactLandscape) 42.dp else 48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color.White),
+                    ) { Text("اتصال وبدء الاستخدام", fontWeight = FontWeight.Bold, fontSize = if (compactLandscape) 11.sp else 14.sp) }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun SetupField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    uri: Boolean = false,
+    password: Boolean = false,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.heightIn(min = 48.dp),
+        label = { Text(label, fontSize = 11.sp) },
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White, fontSize = 13.sp),
+        keyboardOptions = KeyboardOptions(keyboardType = if (uri) KeyboardType.Uri else KeyboardType.Text),
+        visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+    )
 }
 
 @Composable
