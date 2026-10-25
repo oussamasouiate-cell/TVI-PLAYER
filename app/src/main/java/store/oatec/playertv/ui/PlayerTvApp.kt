@@ -122,6 +122,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.snapshotFlow
 import store.oatec.playertv.data.PlayerPreferences
 import store.oatec.playertv.data.OatecAboutRepository
 import store.oatec.playertv.data.SecureSourceStore
@@ -622,6 +625,11 @@ fun PlayerTvApp() {
                     onPlay = { selectedMedia = it },
                     onMovieDetails = { selectedDetails = it },
                     onExit = { kidsExitPinInput = ""; kidsExitPinError = ""; showKidsExitDialog = true },
+                    onLoadMore = { loadMore(currentSection) },
+                    onOpenYoutubeKids = {
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtubekids.com/"))) }
+                            .onFailure { message = "ما قدرناش نفتحو YouTube Kids فهاد الجهاز." }
+                    },
                 )
             } else if (currentSection == Section.HOME) {
                 HomeDashboard(
@@ -3041,14 +3049,24 @@ private fun KidsDashboard(
     onPlay: (MediaEntry) -> Unit,
     onMovieDetails: (MediaEntry) -> Unit,
     onExit: () -> Unit,
+    onLoadMore: () -> Unit,
+    onOpenYoutubeKids: () -> Unit,
 ) {
-    val visible = remember(section, movies, series, channels, search) {
+    var selectedKidCategory by remember(section) { mutableStateOf("الكل") }
+    val allVisible = remember(section, movies, series, channels, search) {
         val source = when (section) {
             Section.LIVE -> channels
             Section.SERIES -> series
             else -> movies
         }
         source.filter { search.isBlank() || it.title.contains(search, ignoreCase = true) || it.category.contains(search, ignoreCase = true) }
+    }
+    val kidCategories = remember(allVisible) {
+        allVisible.map { it.category.trim() }.filter { it.isNotBlank() }.distinctBy { it.lowercase() }.sortedBy { it.lowercase() }.take(18)
+    }
+    val visible = remember(allVisible, selectedKidCategory) {
+        if (selectedKidCategory == "الكل") allVisible
+        else allVisible.filter { it.category.equals(selectedKidCategory, ignoreCase = true) }
     }
     val kidShelves = remember(visible, section, search) {
         if (search.isNotBlank()) listOf("نتائج البحث 🔎" to visible)
@@ -3067,7 +3085,11 @@ private fun KidsDashboard(
                     else -> "🧸 عالم الصغار"
                 }] = matches
             }
-            if (result.isEmpty()) result["🌈 اكتشف المحتوى"] = visible
+            val hasCategoryShelves = result.keys.any { it != "✨ اختياراتنا ليك" }
+            if (!hasCategoryShelves) {
+                result.clear()
+                result["🌈 اكتشف المحتوى"] = visible
+            }
             result.entries.map { it.key to it.value }
         }
     }
@@ -3079,17 +3101,24 @@ private fun KidsDashboard(
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF102E50), Color(0xFF151B3B), Color(0xFF301D4D))))) {
         KidsBackgroundDoodles(compact = compact)
         Column(
-            Modifier.fillMaxSize().padding(if (compact) 12.dp else 24.dp),
-            verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 14.dp),
+            Modifier.fillMaxSize().padding(if (compact) 8.dp else 14.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 8.dp),
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f)) {
                     Text("🌈 TVI KIDS 🦄", color = Color(0xFFFFD76A), fontSize = if (compact) 23.sp else 34.sp, fontWeight = FontWeight.Black)
                     Text("مغامرات، كرتون وتعلّم فبلاصة وحدة!", color = Color(0xFFE5F4FF), fontSize = if (compact) 11.sp else 14.sp)
                 }
-                OutlinedButton(onClick = onExit) { Text("👨 Parent / PIN") }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = onOpenYoutubeKids, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+                        Text("▶ YouTube Kids", fontSize = 11.sp, maxLines = 1)
+                    }
+                    OutlinedButton(onClick = onExit, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+                        Text("👨 Parent / PIN", fontSize = 11.sp, maxLines = 1)
+                    }
+                }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(Section.LIVE to "📺 قنوات", Section.MOVIES to "🎨 كرتون وأفلام", Section.SERIES to "🦸 مسلسلات").forEach { (target, label) ->
                     Button(
                         onClick = { onSection(target) },
@@ -3098,17 +3127,35 @@ private fun KidsDashboard(
                             contentColor = Color.White,
                         ),
                         modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = if (compact) 5.dp else 10.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = if (compact) 3.dp else 5.dp),
                     ) { Text(label, fontSize = if (compact) 10.sp else 13.sp, maxLines = 1) }
                 }
             }
             OutlinedTextField(
                 value = search,
                 onValueChange = onSearch,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 58.dp),
                 singleLine = true,
-                label = { Text("🔎 قلب على الكرتون أو البرنامج") },
+                label = { Text("🔎 قلب على الكرتون أو البرنامج", fontSize = 11.sp) },
             )
+            if (kidCategories.isNotEmpty()) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(end = 8.dp)) {
+                    item(key = "kids-category-all") {
+                        OutlinedButton(
+                            onClick = { selectedKidCategory = "الكل" },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 3.dp),
+                            border = BorderStroke(1.dp, if (selectedKidCategory == "الكل") Color(0xFFFFD76A) else Color.White.copy(alpha = 0.35f)),
+                        ) { Text("الكل", color = Color.White, fontSize = 11.sp) }
+                    }
+                    items(kidCategories, key = { "kids-category:$it" }) { category ->
+                        OutlinedButton(
+                            onClick = { selectedKidCategory = category },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 3.dp),
+                            border = BorderStroke(1.dp, if (selectedKidCategory == category) Color(0xFFFFD76A) else Color.White.copy(alpha = 0.35f)),
+                        ) { Text(category, color = Color.White, fontSize = 11.sp, maxLines = 1) }
+                    }
+                }
+            }
             if (visible.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3117,36 +3164,46 @@ private fun KidsDashboard(
                     }
                 }
             } else {
+                val kidsListState = rememberLazyListState()
+                LaunchedEffect(kidsListState, section, visible.size) {
+                    snapshotFlow { kidsListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
+                        .distinctUntilChanged()
+                        .collectLatest { lastVisible ->
+                            val totalItems = kidsListState.layoutInfo.totalItemsCount
+                            if (totalItems > 0 && lastVisible >= totalItems - 3) onLoadMore()
+                        }
+                }
                 LazyColumn(
+                    state = kidsListState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     item(key = "kids-welcome-banner") {
                         Surface(
                             color = Color(0xFF6546B8),
-                            shape = RoundedCornerShape(20.dp),
+                            shape = RoundedCornerShape(14.dp),
                             border = BorderStroke(1.dp, Color(0xFFFFD76A).copy(alpha = 0.65f)),
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Row(Modifier.padding(if (compact) 12.dp else 18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                    Text("أهلاً بالأبطال الصغار! ⭐", color = Color.White, fontSize = if (compact) 16.sp else 22.sp, fontWeight = FontWeight.Black)
-                                    Text("اختار مغامرتك الجاية وتفرّج وتعلّم 🎉", color = Color(0xFFFFEAB0), fontSize = if (compact) 11.sp else 13.sp)
+                            Row(Modifier.padding(horizontal = 12.dp, vertical = if (compact) 5.dp else 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                    Text("أهلاً بالأبطال الصغار! ⭐", color = Color.White, fontSize = if (compact) 13.sp else 16.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                                    Text("اختار مغامرتك الجاية وتعلّم 🎉", color = Color(0xFFFFEAB0), fontSize = if (compact) 9.sp else 11.sp, maxLines = 1)
                                 }
-                                Text("🦄\n🚀\n🐻", fontSize = if (compact) 23.sp else 30.sp, lineHeight = if (compact) 26.sp else 34.sp)
+                                Text("🦄 🚀 🐻", fontSize = if (compact) 16.sp else 20.sp, maxLines = 1)
                             }
                         }
                     }
                     kidShelves.forEachIndexed { shelfIndex, (shelfTitle, itemsForShelf) ->
                         if (itemsForShelf.isNotEmpty()) {
                             item(key = "kids-heading:$shelfIndex") {
-                                Text(shelfTitle, color = kidAccent, fontSize = if (compact) 15.sp else 19.sp, fontWeight = FontWeight.Black)
+                                Text(shelfTitle, color = kidAccent, fontSize = if (compact) 13.sp else 16.sp, fontWeight = FontWeight.Black)
                             }
                             item(key = "kids-row:$shelfIndex") {
-                                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(end = 12.dp)) {
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(end = 8.dp)) {
                                     items(itemsForShelf.distinctBy { it.id }, key = { "kids:${shelfIndex}:${it.id}" }) { entry ->
-                                        Column(Modifier.width(if (compact) 126.dp else 158.dp).clickable {
+                                        Column(Modifier.width(if (compact) 104.dp else 132.dp).clickable {
                                             if (section == Section.MOVIES) onMovieDetails(entry) else onPlay(entry)
                                         }) {
                                             Surface(
@@ -3169,7 +3226,7 @@ private fun KidsDashboard(
                                                     }
                                                 }
                                             }
-                                            Text(entry.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+                                            Text(entry.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = if (compact) 11.sp else 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
                                             if (entry.category.isNotBlank()) Text(entry.category, color = Color(0xFFB6D5E5), fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
                                     }
