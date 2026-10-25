@@ -1,0 +1,75 @@
+name: Android Emulator Smoke Test
+
+on:
+  push:
+    branches:
+      - feature/prompt-full-implementation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-emulator-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  emulator-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.1.0'
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --no-daemon
+
+      - name: Install, launch, and inspect app in Android Emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          script: |
+            set -euo pipefail
+            APK="app/build/outputs/apk/debug/app-debug.apk"
+            test -f "$APK"
+            adb install -r "$APK"
+            adb shell am force-stop store.oatec.playertv
+            adb shell monkey -p store.oatec.playertv 1
+            sleep 25
+            adb shell pidof store.oatec.playertv
+            adb logcat -d -s AndroidRuntime:E > android-runtime-errors.log
+            if grep -q "FATAL EXCEPTION" android-runtime-errors.log; then
+              cat android-runtime-errors.log
+              exit 1
+            fi
+            adb shell uiautomator dump /sdcard/window.xml
+            adb pull /sdcard/window.xml emulator-ui.xml
+            adb exec-out screencap -p > emulator-screenshot.png
+            test -s emulator-ui.xml
+            test -s emulator-screenshot.png
+
+      - name: Upload emulator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tvi-player-emulator-evidence
+          path: |
+            android-runtime-errors.log
+            emulator-ui.xml
+            emulator-screenshot.png
+          if-no-files-found: warn
+          retention-days: 14
