@@ -33,7 +33,9 @@ jobs:
           gradle-version: '9.1.0'
 
       - name: Build debug APK
-        run: gradle :app:assembleDebug --no-daemon
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: gradle :app:assembleDebug --no-daemon -PYOUTUBE_API_KEY="$YOUTUBE_API_KEY"
 
       - name: Install, launch, and inspect app in Android Emulator
         uses: reactivecircus/android-emulator-runner@v2
@@ -45,26 +47,18 @@ jobs:
           script: |
             set -eu
             APK="$(find "${{ github.workspace }}/app/build/outputs/apk/debug" -maxdepth 2 -type f -name "*.apk" -print -quit)"
-            if [ -z "$APK" ] || [ ! -f "$APK" ]; then
-              echo "No debug APK found under app/build/outputs/apk/debug"
-              find "${{ github.workspace }}/app/build/outputs/apk" -maxdepth 4 -type f -print || true
-              exit 1
-            fi
+            test -n "$APK" && test -f "$APK" || { echo "No debug APK found under app/build/outputs/apk/debug"; find "${{ github.workspace }}/app/build/outputs/apk" -maxdepth 4 -type f -print || true; exit 1; }
             adb install -r "$APK"
             adb shell am force-stop store.oatec.playertv
             adb shell monkey -p store.oatec.playertv 1
             sleep 25
             adb shell pidof store.oatec.playertv
             adb logcat -d -s AndroidRuntime:E > android-runtime-errors.log
-            if grep -q "FATAL EXCEPTION" android-runtime-errors.log; then
-              cat android-runtime-errors.log
-              exit 1
-            fi
+            grep -q "FATAL EXCEPTION" android-runtime-errors.log && { cat android-runtime-errors.log; exit 1; } || true
             adb shell uiautomator dump /sdcard/window.xml
             adb pull /sdcard/window.xml emulator-ui.xml
             adb exec-out screencap -p > emulator-screenshot.png
-            test -s emulator-ui.xml
-            test -s emulator-screenshot.png
+            test -s emulator-ui.xml && test -s emulator-screenshot.png
 
       - name: Upload emulator evidence
         if: always()
