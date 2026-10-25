@@ -4,7 +4,6 @@ import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
-import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
@@ -46,14 +45,14 @@ class XtreamVodClient(
             ?: throw IllegalArgumentException("ما لقيتش username فالرابط.")
         val password = uri.getQueryParameter("password")?.takeIf { it.isNotBlank() }
             ?: throw IllegalArgumentException("ما لقيتش password فالرابط.")
-        val port = if (uri.port == -1) "" else ":\u0024{uri.port}"
-        val baseUrl = "\u0024{uri.scheme}://\u0024{uri.host}\u0024port\u0024{uri.encodedPath.orEmpty().substringBeforeLast('/', "").takeIf { it.isNotEmpty() }?.let { if (it.startsWith("/")) it else "/\u0024it" }.orEmpty()}"
+        val port = if (uri.port == -1) "" else ":${uri.port}"
+        val baseUrl = "${uri.scheme}://${uri.host}$port${uri.encodedPath.orEmpty().substringBeforeLast('/', "").takeIf { it.isNotEmpty() }?.let { if (it.startsWith("/")) it else "/$it" }.orEmpty()}"
         return XtreamCredentials(baseUrl.trimEnd('/'), username, password)
     }
 
     suspend fun fetchVod(credentials: XtreamCredentials): List<XtreamVodItem> = withContext(Dispatchers.IO) {
-        val query = "username=\u0024{enc(credentials.username)}&password=\u0024{enc(credentials.password)}&action=get_vod_streams"
-        val json = request("\u0024{credentials.baseUrl.trimEnd('/')}/player_api.php?\u0024query")
+        val query = "username=${enc(credentials.username)}&password=${enc(credentials.password)}&action=get_vod_streams"
+        val json = request("${credentials.baseUrl.trimEnd('/')}/player_api.php?$query")
         val array = JSONArray(json)
         buildList {
             for (i in 0 until array.length()) {
@@ -78,12 +77,12 @@ class XtreamVodClient(
     fun movieUrl(credentials: XtreamCredentials, streamId: String, extension: String): String {
         require(streamId.matches(Regex("[A-Za-z0-9_-]+"))) { "معرّف الفيلم غير صالح." }
         val safeExtension = extension.lowercase().takeIf { it.matches(Regex("[a-z0-9]{2,5}")) } ?: "mp4"
-        return "\u0024{credentials.baseUrl.trimEnd('/')}/movie/\u0024{encPath(credentials.username)}/\u0024{encPath(credentials.password)}/\u0024streamId.\u0024safeExtension"
+        return "${credentials.baseUrl.trimEnd('/')}/movie/${encPath(credentials.username)}/${encPath(credentials.password)}/$streamId.$safeExtension"
     }
 
     suspend fun fetchVodCategories(credentials: XtreamCredentials): JSONArray = withContext(Dispatchers.IO) {
-        val query = "username=\u0024{enc(credentials.username)}&password=\u0024{enc(credentials.password)}&action=get_vod_categories"
-        JSONArray(request("\u0024{credentials.baseUrl.trimEnd('/')}/player_api.php?\u0024query"))
+        val query = "username=${enc(credentials.username)}&password=${enc(credentials.password)}&action=get_vod_categories"
+        JSONArray(request("${credentials.baseUrl.trimEnd('/')}/player_api.php?$query"))
     }
 
     private fun request(address: String): String {
@@ -99,7 +98,7 @@ class XtreamVodClient(
             val body = stream?.use { input ->
                 BufferedReader(InputStreamReader(input, Charsets.UTF_8)).use { it.readText() }
             }.orEmpty()
-            if (status !in 200..299) throw IllegalStateException("Xtream API رجعات HTTP \u0024status.")
+            if (status !in 200..299) throw IllegalStateException("Xtream API رجعات HTTP $status.")
             return body
         } finally {
             connection.disconnect()
