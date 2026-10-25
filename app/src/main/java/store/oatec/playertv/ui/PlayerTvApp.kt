@@ -102,6 +102,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -2948,6 +2949,7 @@ private fun PlaybackDialog(
     var error by remember { mutableStateOf("") }
     var showList by remember { mutableStateOf(false) }
     var showQualityDialog by remember { mutableStateOf(false) }
+    var showAudioDialog by remember { mutableStateOf(false) }
     var subtitleMessage by remember { mutableStateOf("") }
     val subtitlePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null && activeEngine == "exoplayer") {
@@ -3174,6 +3176,7 @@ private fun PlaybackDialog(
             }
             Row(Modifier.align(Alignment.TopEnd).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (entry.kind != MediaKind.LIVE) {
+                    if (activeEngine == "exoplayer") OutlinedButton(onClick = { showAudioDialog = true }) { Text("Audio tracks") }
                     OutlinedButton(onClick = { subtitlePicker.launch(arrayOf("text/*", "application/x-subrip", "application/octet-stream")) }) { Text("Load subtitles") }
                 }
                 if (entry.kind == MediaKind.LIVE && qualityOptions.size > 1) {
@@ -3234,6 +3237,48 @@ private fun PlaybackDialog(
                 }
             }
         }
+    }
+    if (showAudioDialog) {
+        val mappedInfo = trackSelector.currentMappedTrackInfo
+        val audioChoices = buildList {
+            if (mappedInfo != null) {
+                for (rendererIndex in 0 until mappedInfo.rendererCount) {
+                    if (mappedInfo.getRendererType(rendererIndex) != C.TRACK_TYPE_AUDIO) continue
+                    val groups = mappedInfo.getTrackGroups(rendererIndex)
+                    for (groupIndex in 0 until groups.length) {
+                        val group = groups.get(groupIndex)
+                        for (trackIndex in 0 until group.length) {
+                            val format = group.getFormat(trackIndex)
+                            val label = listOfNotNull(format.label?.takeIf { it.isNotBlank() }, format.language?.takeIf { it.isNotBlank() }, format.sampleMimeType?.substringAfter('/')?.takeIf { it.isNotBlank() }).distinct().joinToString(" · ").ifBlank { "Audio track ${trackIndex + 1}" }
+                            add(Triple(group, trackIndex, label))
+                        }
+                    }
+                }
+            }
+        }
+        AlertDialog(
+            onDismissRequest = { showAudioDialog = false },
+            title = { Text("Audio tracks") },
+            text = {
+                if (audioChoices.isEmpty()) Text("No selectable audio tracks are available yet, or this stream is still loading.")
+                else Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    audioChoices.forEachIndexed { index, choice ->
+                        TextButton(onClick = {
+                            trackSelector.parameters = trackSelector.buildUponParameters()
+                                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                                .addOverride(TrackSelectionOverride(choice.first, listOf(choice.second)))
+                                .build()
+                            showAudioDialog = false
+                        }) { Text(choice.third.ifBlank { "Audio ${index + 1}" }) }
+                    }
+                    TextButton(onClick = {
+                        trackSelector.parameters = trackSelector.buildUponParameters().clearOverridesOfType(C.TRACK_TYPE_AUDIO).build()
+                        showAudioDialog = false
+                    }) { Text("Automatic selection") }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showAudioDialog = false }) { Text("Close") } },
+        )
     }
     if (showQualityDialog) {
         AlertDialog(
