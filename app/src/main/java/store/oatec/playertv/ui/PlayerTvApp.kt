@@ -3537,6 +3537,123 @@ private fun KidsDashboard(
 
 
 @Composable
+private fun KidsYouTubePlayerDialog(videoId: String, onDismiss: () -> Unit) {
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            Modifier.fillMaxSize().padding(8.dp),
+            color = Color(0xFF101B36),
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(2.dp, Color(0xFFFFD76A)),
+        ) {
+            Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("▶ YouTube Kids", color = Color(0xFFFFD76A), fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) { Text("رجوع ✕", color = Color.White) }
+                }
+                AndroidView(
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).background(Color.Black),
+                    factory = { context ->
+                        WebView(context).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.mediaPlaybackRequiresUserGesture = false
+                            settings.allowFileAccess = false
+                            settings.allowContentAccess = false
+                            webViewClient = WebViewClient()
+                            webViewRef = this
+                            loadUrl("https://www.youtube-nocookie.com/embed/" + videoId + "?autoplay=1&playsinline=1&rel=0")
+                        }
+                    },
+                    onRelease = { view ->
+                        view.stopLoading()
+                        view.destroy()
+                        if (webViewRef === view) webViewRef = null
+                    },
+                )
+            }
+        }
+    }
+}
+
+private fun searchYouTubeKids(query: String): List<MediaEntry> {
+    val encoded = java.net.URLEncoder.encode(query + " kids", "UTF-8")
+    val connection = (URL("https://www.youtube.com/results?search_query=" + encoded).openConnection() as HttpURLConnection).apply {
+        connectTimeout = 8000
+        readTimeout = 8000
+        setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/122.0 Mobile Safari/537.36")
+        setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+    }
+    return try {
+        val html = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        val markerIndex = html.indexOf("ytInitialData").takeIf { it >= 0 } ?: return emptyList()
+        val start = html.indexOf('{', markerIndex).takeIf { it >= 0 } ?: return emptyList()
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var end = -1
+        for (index in start until html.length) {
+            val ch = html[index]
+            if (inString) {
+                if (escaped) escaped = false
+                else if (ch == '\\') escaped = true
+                else if (ch == '"') inString = false
+            } else {
+                when (ch) {
+                    '"' -> inString = true
+                    '{' -> depth++
+                    '}' -> {
+                        depth--
+                        if (depth == 0) {
+                            end = index + 1
+                            break
+                        }
+                    }
+                }
+            }
+        }
+        if (end <= start) return emptyList()
+        val root = JSONObject(html.substring(start, end))
+        val found = mutableListOf<MediaEntry>()
+        fun visit(value: Any?) {
+            when (value) {
+                is JSONObject -> {
+                    val renderer = value.optJSONObject("videoRenderer")
+                    if (renderer != null) {
+                        val id = renderer.optString("videoId")
+                        val titleNode = renderer.optJSONObject("title")
+                        val title = titleNode?.optString("simpleText").orEmpty().ifBlank {
+                            val runs = titleNode?.optJSONArray("runs")
+                            if (runs != null && runs.length() > 0) runs.optJSONObject(0)?.optString("text").orEmpty() else ""
+                        }
+                        val thumbs = renderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                        val thumb = if (thumbs != null && thumbs.length() > 0) thumbs.optJSONObject(thumbs.length() - 1)?.optString("url").orEmpty() else ""
+                        if (id.isNotBlank() && title.isNotBlank() && found.none { it.id == "youtube:" + id }) {
+                            found += MediaEntry(
+                                id = "youtube:" + id,
+                                title = title,
+                                category = "YouTube",
+                                streamUrl = "https://www.youtube.com/watch?v=" + id,
+                                logoUrl = thumb.ifBlank { "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg" },
+                                kind = MediaKind.MOVIE,
+                                description = "YouTube kids search result",
+                            )
+                        }
+                    }
+                    val keys = value.keys()
+                    while (keys.hasNext()) visit(value.opt(keys.next()))
+                }
+                is JSONArray -> for (i in 0 until value.length()) visit(value.opt(i))
+            }
+        }
+        visit(root)
+        found.take(20)
+    } finally {
+        connection.disconnect()
+    }
+}
+
+@Composable
 private fun YouTubeKidsSearchDialog(onDismiss: () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var submittedQuery by rememberSaveable { mutableStateOf("") }
