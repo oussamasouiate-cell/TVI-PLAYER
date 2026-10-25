@@ -11,6 +11,9 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven("https://yuroyami.github.io/maven") {
+            content { includeModuleByRegex("io\\.github\\.yuroyami", "libmpvkt.*") }
+        }
     }
 }
 
