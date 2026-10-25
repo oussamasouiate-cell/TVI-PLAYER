@@ -424,15 +424,37 @@ class SourceRepository {
             connection.instanceFollowRedirects = false
             connection.setRequestProperty("User-Agent", "OATEC-PlayerTv/1.0 Android")
             try {
+                connection.setRequestProperty(
+                    "Accept",
+                    "application/x-mpegURL, application/vnd.apple.mpegurl, audio/mpegurl, text/plain, */*"
+                )
+                connection.setRequestProperty("Accept-Encoding", "gzip")
                 val status = connection.responseCode
                 if (status in 300..399) {
                     if (redirectCount == MAX_REDIRECTS) throw IOException("The source redirected too many times.")
                     val location = connection.getHeaderField("Location")
-                        ?: throw IOException("The source returned an invalid redirect.")
+                        ?: throw IOException("The M3U server redirected without a Location header.")
                     current = URL(current, location)
                     continue
                 }
-                if (status !in 200..299) throw IOException("Source request failed (HTTP $status).")
+                if (status !in 200..299) {
+                    val errorBody = runCatching {
+                        connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                            ?.replace(Regex("\\s+"), " ")?.take(240)
+                    }.getOrNull().orEmpty()
+                    val detail = when {
+                        status == 401 || status == 403 ->
+                            "The M3U server refused access (HTTP $status). Check the playlist URL, credentials, or provider restrictions."
+                        status == 404 ->
+                            "The M3U playlist URL was not found (HTTP 404). Check that you copied the full playlist URL."
+                        status == 429 ->
+                            "The M3U provider is limiting requests (HTTP 429). Wait and try again."
+                        status == 884 ->
+                            "The provider returned HTTP 884. This is not a standard HTTP status; the provider, proxy, or copied URL may be rejecting the request."
+                        else -> "M3U request failed (HTTP $status)."
+                    }
+                    throw IOException(if (errorBody.isBlank()) detail else "$detail Server response: $errorBody")
+                }
                 return read(connection)
             } finally {
                 connection.disconnect()
