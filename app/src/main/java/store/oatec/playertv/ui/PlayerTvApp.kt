@@ -628,10 +628,6 @@ fun PlayerTvApp() {
                     onMovieDetails = { selectedDetails = it },
                     onExit = { kidsExitPinInput = ""; kidsExitPinError = ""; showKidsExitDialog = true },
                     onLoadMore = { loadMore(currentSection) },
-                    onOpenYoutubeKids = {
-                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtubekids.com/"))) }
-                            .onFailure { message = "ما قدرناش نفتحو YouTube Kids فهاد الجهاز." }
-                    },
                 )
             } else if (currentSection == Section.HOME) {
                 HomeDashboard(
@@ -3052,7 +3048,6 @@ private fun KidsDashboard(
     onMovieDetails: (MediaEntry) -> Unit,
     onExit: () -> Unit,
     onLoadMore: () -> Unit,
-    onOpenYoutubeKids: () -> Unit,
 ) {
     var showYoutubeKidsSearch by rememberSaveable { mutableStateOf(false) }
     var selectedKidCategory by remember(section) { mutableStateOf("الكل") }
