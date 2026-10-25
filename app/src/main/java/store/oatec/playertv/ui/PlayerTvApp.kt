@@ -3352,14 +3352,13 @@ private fun KidsDashboard(
     onExit: () -> Unit,
     onLoadMore: () -> Unit,
 ) {
-    var showYoutubeKidsSearch by rememberSaveable { mutableStateOf(false) }
     var youtubeResults by remember { mutableStateOf<List<MediaEntry>>(emptyList()) }
     var youtubeLoading by remember { mutableStateOf(false) }
     var youtubeError by remember { mutableStateOf("") }
     var selectedKidCategory by remember(section) { mutableStateOf("الكل") }
     LaunchedEffect(search) {
         val query = search.trim()
-        if (query.length < 2) {
+        if (query.length < 2 || section == Section.LIVE) {
             youtubeResults = emptyList()
             youtubeError = ""
             youtubeLoading = false
@@ -3380,7 +3379,8 @@ private fun KidsDashboard(
             else -> movies
         }
         val catalogueResults = source.filter { search.isBlank() || it.title.contains(search, ignoreCase = true) || it.category.contains(search, ignoreCase = true) }
-        if (search.isBlank()) catalogueResults else (catalogueResults + youtubeResults).distinctBy { it.id }
+        if (search.isBlank() || section == Section.LIVE) catalogueResults
+        else (catalogueResults + youtubeResults).distinctBy { it.id }
     }
     val kidCategories = remember(allVisible) {
         allVisible.map { it.category.trim() }.filter { it.isNotBlank() }.distinctBy { it.lowercase() }.sortedBy { it.lowercase() }.take(18)
@@ -3430,13 +3430,8 @@ private fun KidsDashboard(
                     Text("🌈 TVI KIDS 🦄", color = Color(0xFFFFD76A), fontSize = if (compact) 23.sp else 34.sp, fontWeight = FontWeight.Black)
                     Text("مغامرات، كرتون وتعلّم فبلاصة وحدة!", color = Color(0xFFE5F4FF), fontSize = if (compact) 11.sp else 14.sp)
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(onClick = { showYoutubeKidsSearch = true }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
-                        Text("▶ YouTube", fontSize = 11.sp, maxLines = 1)
-                    }
-                    OutlinedButton(onClick = onExit, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
-                        Text("👨 Parent / PIN", fontSize = 11.sp, maxLines = 1)
-                    }
+                OutlinedButton(onClick = onExit, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) {
+                    Text("👨 Parent / PIN", fontSize = 11.sp, maxLines = 1)
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -3568,9 +3563,6 @@ private fun KidsDashboard(
                 }
             }
         }
-    }
-    if (showYoutubeKidsSearch) {
-        YouTubeKidsSearchDialog(onDismiss = { showYoutubeKidsSearch = false })
     }
 }
 
