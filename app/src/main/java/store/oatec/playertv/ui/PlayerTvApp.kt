@@ -2950,6 +2950,7 @@ private fun PlaybackDialog(
     var showList by remember { mutableStateOf(false) }
     var showQualityDialog by remember { mutableStateOf(false) }
     var showAudioDialog by remember { mutableStateOf(false) }
+    var activeEngine by remember(entry.id) { mutableStateOf(preferences.playbackEngine()) }
     var subtitleMessage by remember { mutableStateOf("") }
     val subtitlePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null && activeEngine == "exoplayer") {
@@ -2980,7 +2981,6 @@ private fun PlaybackDialog(
             .distinctBy { it.id }
             .sortedByDescending { streamQualityRank(it) }
     }
-    var activeEngine by remember(entry.id) { mutableStateOf(preferences.playbackEngine()) }
     val mpvCaBundle = remember(context) {
         File(context.filesDir, "mpv-cacert.pem").apply {
             if (!exists()) {
