@@ -53,7 +53,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:1.9.0")
     implementation("androidx.media3:media3-exoplayer-dash:1.9.0")
     implementation("androidx.media3:media3-ui:1.9.0")
-    implementation("org.videolan.android:libvlc-all:3.6.2")
+    implementation("io.github.yuroyami:libmpvkt-view:0.3.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
