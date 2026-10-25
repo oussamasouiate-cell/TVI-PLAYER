@@ -951,10 +951,6 @@ fun PlayerTvApp() {
                         sourceStore.save(sources)
                         activeSourceId = source.id
                         showAddSource = false
-                        // Adding a source from Settings must trigger the same catalogue-load
-                        // path as the initial setup flow, rather than leaving the user on
-                        // Settings with the new source selected but not loaded.
-                        navigateTo(Section.LIVE)
                     },
                 )
             }
@@ -2759,9 +2755,6 @@ private fun AddSourceDialog(onDismiss: () -> Unit, onSave: (PlayerSource) -> Uni
                     val enteredUrl = url.trim()
                     val queryUser = parsed.getQueryParameter("username").orEmpty().ifBlank { username.trim() }
                     val queryPassword = parsed.getQueryParameter("password").orEmpty().ifBlank { password }
-                    val isGetPhpXtreamLink = type == SourceType.M3U.name &&
-                        parsed.lastPathSegment.equals("get.php", ignoreCase = true) &&
-                        queryUser.isNotBlank() && queryPassword.isNotBlank()
                     val finalUrl = if (type == SourceType.M3U.name &&
                         parsed.path.orEmpty().trim('/').isBlank() &&
                         queryUser.isNotBlank() && queryPassword.isNotBlank()
@@ -2770,16 +2763,14 @@ private fun AddSourceDialog(onDismiss: () -> Unit, onSave: (PlayerSource) -> Uni
                             Uri.encode(queryUser) + "&password=" + Uri.encode(queryPassword) +
                             "&type=m3u_plus&output=ts"
                     } else enteredUrl
-                    val resolvedType = if (isGetPhpXtreamLink) SourceType.XTREAM else SourceType.valueOf(type)
-                    val resolvedUrl = if (isGetPhpXtreamLink) enteredUrl.substringBefore('?').substringBeforeLast('/') else finalUrl
                     onSave(
                         PlayerSource(
                             id = UUID.randomUUID().toString(),
                             name = name.trim(),
-                            type = resolvedType,
-                            serverUrl = resolvedUrl,
-                            username = if (isGetPhpXtreamLink) queryUser else username.trim(),
-                            password = if (isGetPhpXtreamLink) queryPassword else password,
+                            type = SourceType.valueOf(type),
+                            serverUrl = finalUrl,
+                            username = username.trim(),
+                            password = password,
                             epgUrl = epgUrl.trim(),
                         ),
                     )
