@@ -127,6 +127,8 @@ import store.oatec.playertv.data.OatecAboutRepository
 import store.oatec.playertv.data.SecureSourceStore
 import store.oatec.playertv.data.SourceRepository
 import store.oatec.playertv.data.MediaCatalogStore
+import store.oatec.playertv.data.OfflineDownloadStore
+import store.oatec.playertv.data.OfflineItem
 import store.oatec.playertv.data.EpgGuideClient
 import store.oatec.playertv.data.EpgProgram
 import store.oatec.playertv.data.EpgRepository
@@ -149,7 +151,7 @@ private const val CHANNEL_INFO_DURATION_MS = 5_000L
 private const val CATALOG_PAGE_SIZE = 500
 
 private enum class Section(val label: String) {
-    HOME("Home"), LIVE("Live TV"), MOVIES("Movies"), SERIES("Series"), SOURCES("Sources"), SETTINGS("Settings"),
+    HOME("Home"), LIVE("Live TV"), MOVIES("Movies"), SERIES("Series"), DOWNLOADS("Downloads"), SOURCES("Sources"), SETTINGS("Settings"),
 }
 
 @Composable
@@ -162,6 +164,7 @@ fun PlayerTvApp() {
     val sourceStore = remember { SecureSourceStore(context) }
     val preferences = remember { PlayerPreferences(context) }
     val aboutRepository = remember { OatecAboutRepository() }
+    val offlineDownloadStore = remember { OfflineDownloadStore(context) }
     var premiumCode by remember { mutableStateOf(runCatching { sourceStore.loadPremiumCode() }.getOrNull().orEmpty()) }
     var kidsModeActive by remember { mutableStateOf(preferences.kidsModeEnabled()) }
     val catalogLoadMutex = remember { Mutex() }
@@ -741,6 +744,7 @@ fun PlayerTvApp() {
                             onPlay = { selectedMedia = it },
                             onFavorite = { item -> preferences.setFavorite(item.id, item.id !in preferences.favorites()); preferenceRevision++ },
                         )
+                        Section.DOWNLOADS -> OfflineDownloadsScreen(store = offlineDownloadStore, onHome = { goHome() }, onPlay = { selectedMedia = it }, onMessage = { message = it })
                         Section.SOURCES -> SourcesScreen(
                             sources = sources,
                             activeId = activeSourceId,
@@ -870,6 +874,13 @@ fun PlayerTvApp() {
                         selectedMedia = media
                     },
                     onBrowseEpisodes = { selectedDetails = null },
+                    onDownload = {
+                        scope.launch {
+                            runCatching { withContext(Dispatchers.IO) { offlineDownloadStore.enqueue(media) } }
+                                .onSuccess { message = "Download started: " + media.title }
+                                .onFailure { message = it.message ?: "Could not start download." }
+                        }
+                    },
                 )
             }
         }
@@ -1581,6 +1592,7 @@ private fun HomeDashboard(
                     HomeCardData(Section.LIVE, "TV LIVE", "Chaînes en direct", "▣", "LIVE TV", listOf(Color(0xFF193348), Color(0xFF07121C))),
                     HomeCardData(Section.MOVIES, "FILM", "Films à la demande", "▰", "CINÉMA", listOf(Color(0xFF4A351D), Color(0xFF100D0A))),
                     HomeCardData(Section.SERIES, "SIRRIES", "Séries & épisodes", "▤", "SIRRIES", listOf(Color(0xFF263746), Color(0xFF0A0D12))),
+                    HomeCardData(Section.DOWNLOADS, "DOWNLOADS", "Regarder hors ligne", "⬇", "OFFLINE", listOf(Color(0xFF244536), Color(0xFF08140F))),
                     HomeCardData(Section.SETTINGS, "SITTING", "Préférences & sources", "⚙", "OATEC", listOf(Color(0xFF3C2B13), Color(0xFF080A0D))),
                 )
                 cards.forEachIndexed { index, card ->
@@ -2182,12 +2194,74 @@ private fun PosterCard(entry: MediaEntry, favorite: Boolean, onClick: () -> Unit
     }
 }
 
+
+@Composable
+private fun OfflineDownloadsScreen(
+    store: OfflineDownloadStore,
+    onHome: () -> Unit,
+    onPlay: (MediaEntry) -> Unit,
+    onMessage: (String) -> Unit,
+) {
+    var downloads by remember { mutableStateOf<List<OfflineItem>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            downloads = withContext(Dispatchers.IO) { store.list() }
+            delay(1200)
+        }
+    }
+    Column(Modifier.fillMaxSize().background(Ink).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = onHome) { Text("← Home") }
+            Spacer(Modifier.weight(1f))
+            Column(horizontalAlignment = Alignment.End) {
+                Text("DOWNLOADS", color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                Text("المحتوى المحمّل محفوظ فذاكرة الجهاز", color = TextMuted, fontSize = 12.sp)
+            }
+        }
+        if (downloads.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("ما كاين حتى تحميل دابا. اختار فيلم واضغط Download offline.", color = TextMuted)
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(downloads, key = { it.downloadId }) { item ->
+                    Surface(color = Panel, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))) {
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (item.logoUrl.isNotBlank()) AsyncImage(model = item.logoUrl, contentDescription = item.title, modifier = Modifier.size(50.dp, 68.dp), contentScale = ContentScale.Crop)
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Text(item.title, color = TextMain, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                val label = when (item.status) {
+                                    android.app.DownloadManager.STATUS_SUCCESSFUL -> if (item.isComplete) "جاهز للمشاهدة بلا إنترنت" else "الملف غير موجود"
+                                    android.app.DownloadManager.STATUS_FAILED -> "فشل التحميل"
+                                    android.app.DownloadManager.STATUS_PAUSED -> "التحميل متوقف مؤقتاً"
+                                    else -> "كيتم التحميل… ${item.progress}%"
+                                }
+                                Text(label, color = if (item.isComplete) Color(0xFF70D6A2) else TextMuted, fontSize = 11.sp)
+                                if (!item.isComplete && item.status != android.app.DownloadManager.STATUS_FAILED) {
+                                    androidx.compose.material3.LinearProgressIndicator(progress = { item.progress / 100f }, modifier = Modifier.fillMaxWidth(), color = Lime)
+                                }
+                            }
+                            if (item.isComplete) Button(onClick = { onPlay(item.asMediaEntry()) }, colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Ink)) { Text("Play") }
+                            TextButton(onClick = {
+                                store.delete(item.downloadId)
+                                downloads = downloads.filterNot { it.downloadId == item.downloadId }
+                                onMessage("تحيد التحميل ديال " + item.title)
+                            }) { Text("حذف", color = ErrorRed) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun MediaDetailsDialog(
     entry: MediaEntry,
     onDismiss: () -> Unit,
     onPlay: () -> Unit,
     onBrowseEpisodes: () -> Unit,
+    onDownload: () -> Unit,
 ) {
     val metadata = listOf(
         "Category" to entry.category,
@@ -2261,13 +2335,14 @@ private fun MediaDetailsDialog(
                     }
                 }
                 HorizontalDivider(color = TextMain.copy(alpha = 0.1f))
-                Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.End) {
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
+                    if (!isSeries && entry.kind != MediaKind.LIVE) {
+                        OutlinedButton(onClick = onDownload) { Text("⬇ Download offline") }
+                    }
                     Button(
                         onClick = if (isSeries) onBrowseEpisodes else onPlay,
                         colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Ink),
-                    ) {
-                        Text(if (isSeries) "Episodes" else "Play")
-                    }
+                    ) { Text(if (isSeries) "Episodes" else "Play") }
                 }
             }
         }
