@@ -17,7 +17,7 @@ object M3uParser {
         var group = ""
 
         for (rawLine in playlist.lineSequence()) {
-            val line = rawLine.trim()
+            val line = rawLine.trim().removePrefix("\uFEFF")
             if (channels.size >= maxChannels) break
             when {
                 line.startsWith("#EXTINF:", ignoreCase = true) -> {
@@ -81,7 +81,7 @@ object M3uParser {
         var count = 0
         while (true) {
             val rawLine = input.readLine() ?: break
-            val line = rawLine.trim()
+            val line = rawLine.trim().removePrefix("\uFEFF")
             when {
                 line.startsWith("#EXTINF:", ignoreCase = true) -> {
                     val info = line.substringAfter(':')
