@@ -3578,7 +3578,7 @@ private fun KidsYouTubePlayerDialog(videoId: String, onDismiss: () -> Unit) {
 
 private fun searchYouTubeKids(query: String): List<MediaEntry> {
     val encoded = java.net.URLEncoder.encode(query + " kids", "UTF-8")
-    val connection = (URL("https://www.youtube.com/results?search_query=" + encoded).openConnection() as HttpURLConnection).apply {
+    val connection = (URL("https://www.youtube.com/results?search_query=" + encoded + "&safeSearch=moderate").openConnection() as HttpURLConnection).apply {
         connectTimeout = 8000
         readTimeout = 8000
         setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/122.0 Mobile Safari/537.36")
