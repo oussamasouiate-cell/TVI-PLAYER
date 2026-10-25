@@ -1196,7 +1196,7 @@ private fun SettingsScreen(
             OutlinedButton(
                 onClick = onHome,
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 7.dp),
-            ) { Text("⌂ Home", fontSize = 12.sp) }
+            ) { Text("← Back", fontSize = 12.sp) }
             Column(Modifier.weight(1f)) {
                 Text("SETTINGS", color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.Black)
                 Text("Playback, sources and OATEC preferences", color = TextMuted, fontSize = 12.sp)
@@ -1863,7 +1863,7 @@ private fun LiveScreen(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("LIVE TV", color = Lime, fontSize = 18.sp, fontWeight = FontWeight.Black)
                 Spacer(Modifier.weight(1f))
-                OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) { Text("⌂ Home", fontSize = 11.sp) }
+                OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) { Text("← Back", fontSize = 11.sp) }
             }
             OutlinedTextField(
                 value = search, onValueChange = onSearch, modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp),
@@ -2387,7 +2387,7 @@ private fun SeriesScreen(
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) { Text("← Home", fontSize = 11.sp) }
+            OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) { Text("← Back", fontSize = 11.sp) }
             Column(Modifier.weight(1f)) {
                 Text("SERIES", color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.Black)
                 Text("Seasons and episodes • ${filtered.size} titles", color = TextMuted, fontSize = 11.sp)
