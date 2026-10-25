@@ -550,7 +550,6 @@ fun PlayerTvApp() {
                     val key = event.nativeKeyEvent
                     if (key.action != AndroidKeyEvent.ACTION_DOWN) return@onPreviewKeyEvent false
                     when (key.keyCode) {
-                        AndroidKeyEvent.KEYCODE_HOME,
                         AndroidKeyEvent.KEYCODE_MENU -> {
                             goHome()
                             true
@@ -1728,7 +1727,7 @@ private fun NavigationRail(
                 if (!sourceName.isNullOrBlank()) Text(sourceName, color = TextMuted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp)) {
-                Text("⌂ Home", fontSize = 10.sp)
+                Text("← Back", fontSize = 10.sp)
             }
             OutlinedButton(onClick = onExit, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp)) {
                 Text("Exit", fontSize = 10.sp)
@@ -1939,35 +1938,20 @@ private fun LiveScreen(
 }
 @Composable
 private fun ChannelMiniPreview(entry: MediaEntry) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val player = remember(context) {
-        ExoPlayer.Builder(context).build().apply { volume = 0f }
-    }
-    DisposableEffect(player) {
-        onDispose {
-            player.stop()
-            player.release()
+    // Keep browsing lightweight: don't create a second ExoPlayer just for a silent preview.
+    // The full decoder is created only when the user explicitly starts playback.
+    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+        if (entry.logoUrl.isNotBlank()) {
+            AsyncImage(
+                model = entry.logoUrl,
+                contentDescription = entry.title,
+                modifier = Modifier.fillMaxSize().padding(12.dp),
+                contentScale = ContentScale.Fit,
+            )
+        } else {
+            Text(entry.title, color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
-    LaunchedEffect(entry.id, entry.streamUrl) {
-        player.stop()
-        player.clearMediaItems()
-        player.setMediaItem(MediaItem.fromUri(entry.streamUrl))
-        player.prepare()
-        player.playWhenReady = true
-    }
-    AndroidView(
-        factory = { viewContext ->
-            PlayerView(viewContext).apply {
-                this.player = player
-                useController = false
-                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                keepScreenOn = false
-            }
-        },
-        update = { view -> view.player = player },
-        modifier = Modifier.fillMaxSize(),
-    )
 }
 
 @Composable
@@ -2044,7 +2028,7 @@ private fun MediaScreen(
     }
     Column(Modifier.fillMaxSize().background(Color(0xFF09090B)).padding(horizontal = 18.dp, vertical = 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) { Text("← Home", fontSize = 11.sp) }
+            OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) { Text("← Back", fontSize = 11.sp) }
             Column(Modifier.weight(1f)) {
                 Text(if (isMovies) "FILMS" else title.uppercase(), color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.Black)
                 Text("${filtered.size} titles · Discover your next favourite", color = TextMuted, fontSize = 11.sp)
@@ -2120,7 +2104,7 @@ private fun MediaScreen(
                         item(key = "shelf-row:$index:$rowTitle") {
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(end = 12.dp)) {
                                 items(rowEntries.distinctBy { it.id }, key = { "poster:${rowTitle}:${it.id}" }) { entry ->
-                                    PosterCard(entry = entry, favorite = entry.id in preferences.favorites(), onClick = { onPlay(entry) }, onFavorite = { onFavorite(entry) }, accent = accent)
+                                    PosterCard(entry = entry, favorite = entry.id in preferences.favorites(), onClick = { onPlay(entry) }, onFavorite = { onFavorite(entry) }, accent = accent, progressFraction = preferences.watchProgressFraction(entry.id))
                                 }
                             }
                         }
@@ -2163,7 +2147,7 @@ private fun sameChannelIdentity(first: MediaEntry, second: MediaEntry): Boolean 
 }
 
 @Composable
-private fun PosterCard(entry: MediaEntry, favorite: Boolean, onClick: () -> Unit, onFavorite: () -> Unit, accent: Color = Lime) {
+private fun PosterCard(entry: MediaEntry, favorite: Boolean, onClick: () -> Unit, onFavorite: () -> Unit, accent: Color = Lime, progressFraction: Float = 0f) {
     var focused by remember { mutableStateOf(false) }
     Column(Modifier.width(142.dp)) {
         Box(
@@ -2193,6 +2177,14 @@ private fun PosterCard(entry: MediaEntry, favorite: Boolean, onClick: () -> Unit
             TextButton(onClick = onFavorite, modifier = Modifier.align(Alignment.TopEnd), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
                 Text(if (favorite) "♥" else "+", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
+            if (progressFraction > 0f) {
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = { progressFraction },
+                    modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp),
+                    color = Color(0xFFE50914),
+                    trackColor = Color.White.copy(alpha = 0.28f),
+                )
+            }
         }
         Text(entry.title, color = TextMain, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
         val subtitle = listOf(entry.year, entry.genre.ifBlank { entry.category }).firstOrNull { it.isNotBlank() }
@@ -2217,7 +2209,7 @@ private fun OfflineDownloadsScreen(
     }
     Column(Modifier.fillMaxSize().background(Ink).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = onHome) { Text("← Home") }
+            OutlinedButton(onClick = onHome) { Text("← Back") }
             Spacer(Modifier.weight(1f))
             Column(horizontalAlignment = Alignment.End) {
                 Text("DOWNLOADS", color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.Black)
@@ -2435,6 +2427,14 @@ private fun SeriesScreen(
                                     if (entry.logoUrl.isNotBlank()) AsyncImage(model = entry.logoUrl, contentDescription = entry.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                                     else Box(contentAlignment = Alignment.Center) { Text(entry.title.take(1).uppercase(), color = Lime, fontSize = 32.sp, fontWeight = FontWeight.Black) }
                                 }
+                                if (preferences.watchProgressFraction(entry.id) > 0f) {
+                                    androidx.compose.material3.LinearProgressIndicator(
+                                        progress = { preferences.watchProgressFraction(entry.id) },
+                                        modifier = Modifier.fillMaxWidth().height(4.dp),
+                                        color = Color(0xFFE50914),
+                                        trackColor = Color.White.copy(alpha = 0.28f),
+                                    )
+                                }
                                 Text(entry.title, color = TextMain, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp))
                                 TextButton(onClick = { onFavorite(entry) }, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)) {
                                     Text(if (entry.id in preferences.favorites()) "★ Saved" else "+ Favorite", color = Lime, fontSize = 9.sp)
@@ -2468,8 +2468,19 @@ private fun SeriesScreen(
                                 Text(season, color = TextMain, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
                             }
                             items(seasonEpisodes, key = { it.id }) { episode ->
-                                OutlinedButton(onClick = { onPlay(episode) }, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-                                    Text("${episode.episodeNumber.padStart(2, '0')}  ${episode.title}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Column(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    OutlinedButton(onClick = { onPlay(episode) }, modifier = Modifier.fillMaxWidth()) {
+                                        Text("${episode.episodeNumber.padStart(2, '0')}  ${episode.title}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                    val episodeProgress = preferences.watchProgressFraction(episode.id)
+                                    if (episodeProgress > 0f) {
+                                        androidx.compose.material3.LinearProgressIndicator(
+                                            progress = { episodeProgress },
+                                            modifier = Modifier.fillMaxWidth().height(3.dp).padding(horizontal = 4.dp),
+                                            color = Color(0xFFE50914),
+                                            trackColor = Color.White.copy(alpha = 0.22f),
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -2685,6 +2696,9 @@ private fun PlaybackDialog(
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 loading = playbackState == Player.STATE_BUFFERING || playbackState == Player.STATE_IDLE
+                if (playbackState == Player.STATE_ENDED && latestEntry.kind != MediaKind.LIVE && latestEngine == "exoplayer") {
+                    latestPreferences.saveProgress(latestEntry.id, 0L, player.duration.coerceAtLeast(0L))
+                }
             }
             override fun onPlayerError(playbackException: PlaybackException) {
                 loading = false
@@ -2703,18 +2717,27 @@ private fun PlaybackDialog(
                     }
                 }
                 if (latestEngine == "exoplayer" && latestEntry.kind != MediaKind.LIVE && latestPreferences.resumePlayback()) {
-                    latestPreferences.saveProgress(latestEntry.id, player.currentPosition.coerceAtLeast(0L))
+                    latestPreferences.saveProgress(latestEntry.id, player.currentPosition.coerceAtLeast(0L), player.duration.coerceAtLeast(0L))
                 }
             }
         }
         player.addListener(listener)
         onDispose {
             if (latestEngine == "exoplayer" && latestEntry.kind != MediaKind.LIVE && latestPreferences.resumePlayback()) {
-                latestPreferences.saveProgress(latestEntry.id, player.currentPosition.coerceAtLeast(0L))
+                latestPreferences.saveProgress(latestEntry.id, player.currentPosition.coerceAtLeast(0L), player.duration.coerceAtLeast(0L))
             }
             player.stop()
             player.removeListener(listener)
             player.release()
+        }
+    }
+
+    LaunchedEffect(player, entry.id, activeEngine) {
+        while (true) {
+            delay(5_000)
+            if (activeEngine == "exoplayer" && entry.kind != MediaKind.LIVE && preferences.resumePlayback() && player.isPlaying) {
+                preferences.saveProgress(entry.id, player.currentPosition.coerceAtLeast(0L), player.duration.coerceAtLeast(0L))
+            }
         }
     }
 
