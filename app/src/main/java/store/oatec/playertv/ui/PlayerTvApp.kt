@@ -1735,26 +1735,8 @@ private fun HomeDashboard(
     onExit: () -> Unit,
 ) {
     var selectedHomeCard by remember { mutableStateOf(Section.LIVE) }
-    Box(
-        Modifier.fillMaxSize()
-            .background(Ink)
-            .drawBehind {
-                drawRect(
-                    Brush.radialGradient(
-                        colors = listOf(Color(0x665A350A), Color(0x1AE8B83E), Color.Transparent),
-                        center = Offset(size.width * 0.52f, size.height * 0.08f),
-                        radius = size.maxDimension * 0.88f,
-                    ),
-                )
-                drawRect(
-                    Brush.radialGradient(
-                        colors = listOf(Color(0x44331D08), Color.Transparent),
-                        center = Offset(size.width * 0.08f, size.height * 0.92f),
-                        radius = size.maxDimension * 0.62f,
-                    ),
-                )
-            },
-    ) {
+    // Keep the home surface simple and cheap to render on Android TV devices.
+    Box(Modifier.fillMaxSize().background(Ink)) {
         Column(
             Modifier.fillMaxSize().padding(horizontal = if (compact) 16.dp else 34.dp, vertical = if (compact) 12.dp else 22.dp),
             verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 18.dp),
@@ -1782,7 +1764,12 @@ private fun HomeDashboard(
                         Text("TVI", color = Lime, fontSize = if (compact) 20.sp else 34.sp, fontWeight = FontWeight.Black, maxLines = 1)
                         Text("PLAYER", color = TextMain, fontSize = if (compact) 20.sp else 34.sp, fontWeight = FontWeight.Black, maxLines = 1)
                     }
-                    Text("Your entertainment, your way", color = TextMuted, fontSize = if (compact) 9.sp else 15.sp, maxLines = 1)
+                    Text("Votre divertissement, simplement", color = TextMuted, fontSize = if (compact) 9.sp else 13.sp, maxLines = 1)
+                    if (!sourceName.isNullOrBlank()) {
+                        Text("●  ${sourceName}", color = Lime, fontSize = if (compact) 8.sp else 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    } else {
+                        Text("Aucune source connectée", color = TextMuted, fontSize = if (compact) 8.sp else 10.sp, maxLines = 1)
+                    }
                 }
                 Column(
                     Modifier.weight(1f).padding(horizontal = 4.dp),
@@ -1813,9 +1800,9 @@ private fun HomeDashboard(
                 val cards = listOf(
                     HomeCardData(Section.LIVE, "TV LIVE", "Chaînes en direct", "▣", "LIVE TV", listOf(Color(0xFF193348), Color(0xFF07121C))),
                     HomeCardData(Section.MOVIES, "FILM", "Films à la demande", "▰", "CINÉMA", listOf(Color(0xFF4A351D), Color(0xFF100D0A))),
-                    HomeCardData(Section.SERIES, "SIRRIES", "Séries & épisodes", "▤", "SIRRIES", listOf(Color(0xFF263746), Color(0xFF0A0D12))),
+                    HomeCardData(Section.SERIES, "SÉRIES", "Séries & épisodes", "▤", "SÉRIES", listOf(Color(0xFF263746), Color(0xFF0A0D12))),
                     HomeCardData(Section.DOWNLOADS, "DOWNLOADS", "Regarder hors ligne", "⬇", "OFFLINE", listOf(Color(0xFF244536), Color(0xFF08140F))),
-                    HomeCardData(Section.SETTINGS, "SITTING", "Préférences & sources", "⚙", "OATEC", listOf(Color(0xFF3C2B13), Color(0xFF080A0D))),
+                    HomeCardData(Section.SETTINGS, "PARAMÈTRES", "Préférences & sources", "⚙", "OATEC", listOf(Color(0xFF3C2B13), Color(0xFF080A0D))),
                 )
                 cards.forEachIndexed { index, card ->
                     val active = card.section == selectedHomeCard
