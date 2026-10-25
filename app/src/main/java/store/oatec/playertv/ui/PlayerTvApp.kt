@@ -1911,7 +1911,13 @@ private fun NavigationRail(
             }
             OutlinedButton(
                 onClick = onHome,
-                modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 76.dp),
+                modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 76.dp).onPreviewKeyEvent { event ->
+                    val key = event.nativeKeyEvent
+                    if (key.action == AndroidKeyEvent.ACTION_DOWN && key.keyCode in setOf(AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_NUMPAD_ENTER, AndroidKeyEvent.KEYCODE_SPACE)) {
+                        onHome()
+                        true
+                    } else false
+                },
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
             ) {
                 Text("← Back", fontSize = 10.sp)
