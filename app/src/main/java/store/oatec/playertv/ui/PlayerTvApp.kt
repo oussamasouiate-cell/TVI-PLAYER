@@ -1887,11 +1887,8 @@ private fun MediaScreen(
     val shelves = remember(entries, title) {
         val providerCategories = entries.map { it.category.trim() }.filter { it.isNotBlank() && !it.equals("Other", true) }.distinct().sortedBy { it.lowercase() }
         val curated = listOf("Action", "Adventure", "Animation", "Biography", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Music", "Mystery", "Romance", "Sci-Fi", "Sport", "Thriller", "War", "Western")
-        // Always expose the full genre menu, even when a provider omits genre metadata
-        // or a genre only appears on later catalogue pages.
-        val knownGenres = entries.flatMap { entry ->
-            (entry.genre + "," + entry.title).split(",", "|", "/", "·").map { it.trim() }
-        }.mapNotNull { raw -> curated.firstOrNull { it.equals(raw, true) } }.distinct()
+        val knownGenres = entries.flatMap { entry -> (entry.genre + "," + entry.title).split(",", "|", "/", "·").map { it.trim() } }
+            .mapNotNull { raw -> curated.firstOrNull { it.equals(raw, true) } }.distinct()
         listOf("All") + (curated + providerCategories + knownGenres).distinct().filterNot { it.equals("All", true) }
     }
     val searched = entries.filter { it.title.contains(search, true) || it.category.contains(search, true) || it.genre.contains(search, true) }
@@ -1902,21 +1899,39 @@ private fun MediaScreen(
             entry.genre.split(",", "|", "/", "·").any { it.trim().equals(selectedShelf, true) } ||
             entry.title.contains(selectedShelf, true)
     }
-    val gridState = rememberLazyGridState()
-    val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-    // Fetch every 500-item database page automatically while browsing the full library.
-    // The DB import is already complete; this only fills the UI list in bounded chunks.
+    val listState = rememberLazyListState()
+    val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
     LaunchedEffect(lastVisible, entries.size, selectedShelf, search, title) {
-        if (entries.isNotEmpty() && selectedShelf == "All" &&
-            lastVisible >= gridState.layoutInfo.totalItemsCount - 6
-        ) onLoadMore()
+        if (entries.isNotEmpty() && selectedShelf == "All" && lastVisible >= listState.layoutInfo.totalItemsCount - 3) onLoadMore()
     }
-    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
+    val isMovies = title.equals("Movies", true)
+    val accent = if (isMovies) Color(0xFFE50914) else Color(0xFF8B5CF6)
+    val rowShelves = remember(filtered, selectedShelf, search, title) {
+        if (selectedShelf != "All" || search.isNotBlank()) listOf("Search results" to filtered)
+        else {
+            val grouped = linkedMapOf<String, List<MediaEntry>>()
+            if (recentEntries.isNotEmpty()) grouped["Continue watching"] = recentEntries.take(12)
+            val preferred = listOf("Action", "Adventure", "Animation", "Comedy", "Drama", "Family", "Fantasy", "Horror", "Sci-Fi", "Thriller")
+            preferred.forEach { genre ->
+                val matches = filtered.filter { entry ->
+                    entry.category.equals(genre, true) || entry.genre.split(",", "|", "/", "·").any { it.trim().equals(genre, true) }
+                }
+                if (matches.isNotEmpty()) grouped[genre] = matches
+            }
+            filtered.groupBy { it.category.trim().ifBlank { "More to explore" } }
+                .entries.sortedByDescending { it.value.size }.take(8).forEach { (name, items) ->
+                    if (grouped.keys.none { it.equals(name, true) }) grouped[name] = items
+                }
+            if (grouped.isEmpty() || grouped.values.sumOf { it.size } < filtered.size / 2) grouped["Explore all titles"] = filtered
+            grouped.entries.map { it.key to it.value }
+        }
+    }
+    Column(Modifier.fillMaxSize().background(Color(0xFF09090B)).padding(horizontal = 18.dp, vertical = 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) { Text("← Home", fontSize = 11.sp) }
             Column(Modifier.weight(1f)) {
-                Text(title.uppercase(), color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.Black)
-                Text("${filtered.size} titles", color = TextMuted, fontSize = 11.sp)
+                Text(if (isMovies) "FILMS" else title.uppercase(), color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                Text("${filtered.size} titles · Discover your next favourite", color = TextMuted, fontSize = 11.sp)
             }
             SearchField(search, onSearch, Modifier.width(190.dp))
         }
@@ -1928,39 +1943,75 @@ private fun MediaScreen(
                 }
             }
         }
-        if (title.equals("Movies", true) && search.isBlank() && selectedShelf == "All") {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 10.dp)) {
+        if (isMovies && search.isBlank() && selectedShelf == "All") {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
                 listOf("4K", "UHD", "1080p", "HD").forEach { quality ->
                     val count = entries.count { qualityLabel(it).equals(quality, true) || (quality == "HD" && qualityLabel(it) == "1080p") }
                     if (count > 0) CategoryPill("$quality · $count", false) { selectedShelf = quality }
                 }
             }
         }
-        Spacer(Modifier.height(4.dp))
         when {
             busy && entries.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingState("Loading library", catalogProgress, catalogLoadedItems) }
             filtered.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { EmptyState("Nothing to watch yet", message.ifBlank { "No titles match this category. Categories depend on the metadata supplied by your provider." }) }
-            else -> LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 176.dp),
-                state = gridState,
+            else -> LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 24.dp, end = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                if (recentEntries.isNotEmpty() && search.isBlank() && selectedShelf == "All") {
-                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "continue-watching-heading") {
-                        Text("Continue watching", color = TextMain, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                    }
-                    gridItems(recentEntries.take(8), key = { "recent:${it.id}" }) { entry ->
-                        PosterCard(entry = entry, favorite = entry.id in preferences.favorites(), onClick = { onPlay(entry) }, onFavorite = { onFavorite(entry) })
-                    }
-                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "all-titles-heading") {
-                        Text(if (selectedShelf == "All") "Explore all titles" else selectedShelf, color = TextMain, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                if (selectedShelf == "All" && search.isBlank()) {
+                    val featured = filtered.firstOrNull { it.logoUrl.isNotBlank() } ?: filtered.first()
+                    item(key = "featured-title") {
+                        Box(Modifier.fillMaxWidth().heightIn(min = 170.dp, max = 245.dp)) {
+                            Surface(
+                                modifier = Modifier.fillMaxSize().clickable { onPlay(featured) },
+                                shape = RoundedCornerShape(18.dp),
+                                color = Color(0xFF202027),
+                            ) {
+                                Box {
+                                    if (featured.logoUrl.isNotBlank()) AsyncImage(
+                                        model = featured.logoUrl,
+                                        contentDescription = featured.title,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                    Box(Modifier.fillMaxSize().background(
+                                        Brush.horizontalGradient(listOf(Color(0xEE09090B), Color(0x9909090B), Color.Transparent))
+                                    ))
+                                    Column(
+                                        Modifier.align(Alignment.BottomStart).fillMaxWidth(0.8f).padding(18.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Text(if (isMovies) "FEATURED MOVIE" else "FEATURED SERIES", color = accent, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.4.sp)
+                                        Text(featured.title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        Text(listOf(featured.year, featured.genre, featured.rating.takeIf { it.isNotBlank() }?.let { "★ $it" }.orEmpty()).filter { it.isNotBlank() }.joinToString(" · "),
+                                            color = Color.LightGray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Button(onClick = { onPlay(featured) }, colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)) {
+                                            Text("▶  Watch now", fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-                gridItems(filtered, key = { it.id }) { entry ->
-                    PosterCard(entry = entry, favorite = entry.id in preferences.favorites(), onClick = { onPlay(entry) }, onFavorite = { onFavorite(entry) })
+                rowShelves.forEachIndexed { index, (rowTitle, rowEntries) ->
+                    if (rowEntries.isNotEmpty()) {
+                        item(key = "shelf-heading:$index:$rowTitle") {
+                            Text(rowTitle, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+                        }
+                        item(key = "shelf-row:$index:$rowTitle") {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(end = 12.dp)) {
+                                items(rowEntries.distinctBy { it.id }, key = { "poster:${rowTitle}:${it.id}" }) { entry ->
+                                    PosterCard(entry = entry, favorite = entry.id in preferences.favorites(), onClick = { onPlay(entry) }, onFavorite = { onFavorite(entry) }, accent = accent)
+                                }
+                            }
+                        }
+                    }
+                }
+                if (busy) item(key = "catalog-loading") {
+                    Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) { LoadingState("Loading more titles", catalogProgress, catalogLoadedItems) }
                 }
             }
         }
@@ -1996,35 +2047,40 @@ private fun sameChannelIdentity(first: MediaEntry, second: MediaEntry): Boolean 
 }
 
 @Composable
-private fun PosterCard(entry: MediaEntry, favorite: Boolean, onClick: () -> Unit, onFavorite: () -> Unit) {
+private fun PosterCard(entry: MediaEntry, favorite: Boolean, onClick: () -> Unit, onFavorite: () -> Unit, accent: Color = Lime) {
     var focused by remember { mutableStateOf(false) }
-    Column(Modifier.width(176.dp)) {
+    Column(Modifier.width(142.dp)) {
         Box(
             Modifier.fillMaxWidth().aspectRatio(0.68f).onFocusChanged { focused = it.isFocused }.focusable().clickable(onClick = onClick),
         ) {
             Surface(
                 color = Raised,
-                shape = RoundedCornerShape(12.dp),
-                border = if (focused) BorderStroke(2.dp, Lime) else null,
+                shape = RoundedCornerShape(10.dp),
+                border = if (focused) BorderStroke(2.dp, accent) else BorderStroke(1.dp, Color.White.copy(alpha = 0.07f)),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                if (entry.logoUrl.isNotBlank()) AsyncImage(model = entry.logoUrl, contentDescription = entry.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                else Box(contentAlignment = Alignment.Center) {
-                    Text(entry.title.take(1).uppercase(), color = Lime, fontSize = 35.sp, fontWeight = FontWeight.Black)
+                if (entry.logoUrl.isNotBlank()) AsyncImage(
+                    model = entry.logoUrl,
+                    contentDescription = entry.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                ) else Box(contentAlignment = Alignment.Center) {
+                    Text(entry.title.take(1).uppercase(), color = accent, fontSize = 35.sp, fontWeight = FontWeight.Black)
                 }
             }
             val quality = qualityLabel(entry)
             if (quality.isNotBlank()) {
-                Surface(color = Lime, shape = RoundedCornerShape(bottomEnd = 8.dp), modifier = Modifier.align(Alignment.TopStart)) {
-                    Text(quality, color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp))
+                Surface(color = accent, shape = RoundedCornerShape(bottomEnd = 8.dp), modifier = Modifier.align(Alignment.TopStart)) {
+                    Text(quality, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp))
                 }
             }
-            TextButton(onClick = onFavorite, modifier = Modifier.align(Alignment.TopEnd)) {
-                Text(if (favorite) "Saved" else "+ Fav", color = Lime, fontSize = 10.sp)
+            TextButton(onClick = onFavorite, modifier = Modifier.align(Alignment.TopEnd), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                Text(if (favorite) "♥" else "+", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
         }
-        Text(entry.title, color = TextMain, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
-        if (entry.description.isNotBlank()) Text(entry.description, color = TextMuted, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(entry.title, color = TextMain, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+        val subtitle = listOf(entry.year, entry.genre.ifBlank { entry.category }).firstOrNull { it.isNotBlank() }
+        if (subtitle != null) Text(subtitle, color = TextMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -2821,82 +2877,135 @@ private fun KidsDashboard(
         }
         source.filter { search.isBlank() || it.title.contains(search, ignoreCase = true) || it.category.contains(search, ignoreCase = true) }
     }
-    Box(Modifier.fillMaxSize().background(Color(0xFF071522))) {
+    val kidShelves = remember(visible, section, search) {
+        if (search.isNotBlank()) listOf("نتائج البحث 🔎" to visible)
+        else {
+            val result = linkedMapOf<String, List<MediaEntry>>()
+            if (visible.isNotEmpty()) result["✨ اختياراتنا ليك"] = visible.take(14)
+            listOf("Animation", "Kids", "Children", "Educational", "Family", "Cartoon", "Anime").forEach { category ->
+                val matches = visible.filter { entry ->
+                    entry.category.contains(category, true) || entry.genre.contains(category, true) || entry.title.contains(category, true)
+                }
+                if (matches.isNotEmpty() && result.keys.none { it.contains(category, true) }) result[when(category) {
+                    "Educational" -> "🧠 تعلم والعب"
+                    "Family" -> "👨‍👩‍👧‍👦 وقت العائلة"
+                    "Animation", "Cartoon" -> "🎨 عالم الكرتون"
+                    "Anime" -> "🌟 مغامرات الأنيمي"
+                    else -> "🧸 عالم الصغار"
+                }] = matches
+            }
+            if (result.isEmpty()) result["🌈 اكتشف المحتوى"] = visible
+            result.entries.map { it.key to it.value }
+        }
+    }
+    val kidAccent = when (section) {
+        Section.SERIES -> Color(0xFFB99AFF)
+        Section.LIVE -> Color(0xFF73E0FF)
+        else -> Color(0xFFFFC857)
+    }
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF102E50), Color(0xFF151B3B), Color(0xFF301D4D))))) {
         KidsBackgroundDoodles(compact = compact)
         Column(
             Modifier.fillMaxSize().padding(if (compact) 12.dp else 24.dp),
             verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 14.dp),
         ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.weight(1f)) {
-                Text("TVI KIDS", color = Color(0xFF74D7FF), fontSize = if (compact) 22.sp else 32.sp, fontWeight = FontWeight.Black)
-                Text("Un univers sûr pour les enfants", color = Color(0xFFE5F4FF), fontSize = if (compact) 11.sp else 14.sp)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("🌈 TVI KIDS 🦄", color = Color(0xFFFFD76A), fontSize = if (compact) 23.sp else 34.sp, fontWeight = FontWeight.Black)
+                    Text("مغامرات، كرتون وتعلّم فبلاصة وحدة!", color = Color(0xFFE5F4FF), fontSize = if (compact) 11.sp else 14.sp)
+                }
+                OutlinedButton(onClick = onExit) { Text("👨 Parent / PIN") }
             }
-            OutlinedButton(onClick = onExit) { Text("Parent / PIN") }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(Section.LIVE to "Chaînes", Section.MOVIES to "Dessins & films", Section.SERIES to "Séries").forEach { (target, label) ->
-                Button(
-                    onClick = { onSection(target) },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (section == target) Color(0xFF176C91) else Color(0xFF153047),
-                        contentColor = Color.White,
-                    ),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = if (compact) 5.dp else 10.dp),
-                ) { Text(label, fontSize = if (compact) 10.sp else 13.sp, maxLines = 1) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(Section.LIVE to "📺 قنوات", Section.MOVIES to "🎨 كرتون وأفلام", Section.SERIES to "🦸 مسلسلات").forEach { (target, label) ->
+                    Button(
+                        onClick = { onSection(target) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (section == target) Color(0xFF7657D7) else Color(0xFF24456B),
+                            contentColor = Color.White,
+                        ),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = if (compact) 5.dp else 10.dp),
+                    ) { Text(label, fontSize = if (compact) 10.sp else 13.sp, maxLines = 1) }
+                }
             }
-        }
-        OutlinedTextField(
-            value = search,
-            onValueChange = onSearch,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text("Rechercher du contenu enfant") },
-        )
-        Text(
-            when (section) {
-                Section.LIVE -> "CHAÎNES POUR ENFANTS"
-                Section.SERIES -> "SÉRIES"
-                else -> "FILMS & DESSINS ANIMÉS"
-            },
-            color = Color(0xFF9FE5FF),
-            fontSize = if (compact) 12.sp else 15.sp,
-            fontWeight = FontWeight.Bold,
-        )
-        if (visible.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    if (search.isBlank()) "Aucun contenu vérifié disponible pour le moment." else "Aucun résultat. Essayez un autre mot.",
-                    color = Color(0xFFE5F4FF),
-                )
-            }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(if (compact) 125.dp else 175.dp),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                gridItems(visible, key = { it.id }) { entry ->
-                    Surface(
-                        color = Color(0xFF10283B),
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, Color(0xFF2A7897)),
-                        modifier = Modifier.fillMaxWidth().clickable {
-                            if (section == Section.MOVIES || section == Section.HOME) onMovieDetails(entry) else onPlay(entry)
-                        },
-                    ) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                            Text(if (section == Section.LIVE) "▶  TV" else "✦", color = Color(0xFF74D7FF), fontSize = if (compact) 18.sp else 24.sp, fontWeight = FontWeight.Bold)
-                            Text(entry.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            if (entry.category.isNotBlank()) Text(entry.category, color = Color(0xFFB6D5E5), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            OutlinedTextField(
+                value = search,
+                onValueChange = onSearch,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("🔎 قلب على الكرتون أو البرنامج") },
+            )
+            if (visible.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("🧸 🌟 🚀", fontSize = if (compact) 30.sp else 44.sp)
+                        Text(if (search.isBlank()) "مازال ما كاين حتى محتوى أطفال مصنّف هنا." else "ما لقيناش هاد الشي، جرّب كلمة أخرى 😊", color = Color(0xFFE5F4FF))
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    item(key = "kids-welcome-banner") {
+                        Surface(
+                            color = Color(0xFF6546B8),
+                            shape = RoundedCornerShape(20.dp),
+                            border = BorderStroke(1.dp, Color(0xFFFFD76A).copy(alpha = 0.65f)),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(Modifier.padding(if (compact) 12.dp else 18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    Text("أهلاً بالأبطال الصغار! ⭐", color = Color.White, fontSize = if (compact) 16.sp else 22.sp, fontWeight = FontWeight.Black)
+                                    Text("اختار مغامرتك الجاية وتفرّج وتعلّم 🎉", color = Color(0xFFFFEAB0), fontSize = if (compact) 11.sp else 13.sp)
+                                }
+                                Text("🦄\n🚀\n🐻", fontSize = if (compact) 23.sp else 30.sp, lineHeight = if (compact) 26.sp else 34.sp)
+                            }
+                        }
+                    }
+                    kidShelves.forEachIndexed { shelfIndex, (shelfTitle, itemsForShelf) ->
+                        if (itemsForShelf.isNotEmpty()) {
+                            item(key = "kids-heading:$shelfIndex") {
+                                Text(shelfTitle, color = kidAccent, fontSize = if (compact) 15.sp else 19.sp, fontWeight = FontWeight.Black)
+                            }
+                            item(key = "kids-row:$shelfIndex") {
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(end = 12.dp)) {
+                                    items(itemsForShelf.distinctBy { it.id }, key = { "kids:${shelfIndex}:${it.id}" }) { entry ->
+                                        Column(Modifier.width(if (compact) 126.dp else 158.dp).clickable {
+                                            if (section == Section.MOVIES) onMovieDetails(entry) else onPlay(entry)
+                                        }) {
+                                            Surface(
+                                                color = Color(0xFF24456B),
+                                                shape = RoundedCornerShape(16.dp),
+                                                border = BorderStroke(2.dp, kidAccent.copy(alpha = 0.75f)),
+                                                modifier = Modifier.fillMaxWidth().aspectRatio(0.72f),
+                                            ) {
+                                                Box {
+                                                    if (entry.logoUrl.isNotBlank()) AsyncImage(
+                                                        model = entry.logoUrl,
+                                                        contentDescription = entry.title,
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentScale = ContentScale.Crop,
+                                                    ) else Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF7256D8), Color(0xFF22A9B8)))), contentAlignment = Alignment.Center) {
+                                                        Text("🧸\n⭐", fontSize = if (compact) 28.sp else 36.sp, lineHeight = 40.sp)
+                                                    }
+                                                    Box(Modifier.align(Alignment.BottomEnd).padding(6.dp).background(Color(0xCC151B3B), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 3.dp)) {
+                                                        Text(if (section == Section.LIVE) "▶ شاهد" else "✨ اكتشف", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
+                                            }
+                                            Text(entry.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+                                            if (entry.category.isNotBlank()) Text(entry.category, color = Color(0xFFB6D5E5), fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
         }
     }
 }
