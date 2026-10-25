@@ -1,5 +1,7 @@
 package store.oatec.playertv.ui
 
+import store.oatec.playertv.BuildConfig
+
 import android.app.Activity
 import android.content.Context
 import android.content.res.Configuration
@@ -3614,77 +3616,69 @@ private fun KidsYouTubePlayerDialog(videoId: String, onDismiss: () -> Unit) {
 }
 
 private fun searchYouTubeKids(query: String): List<MediaEntry> {
-    val encoded = java.net.URLEncoder.encode(query + " kids", "UTF-8")
-    val connection = (URL("https://www.youtube.com/results?search_query=" + encoded + "&safeSearch=moderate").openConnection() as HttpURLConnection).apply {
-        connectTimeout = 8000
-        readTimeout = 8000
-        setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/122.0 Mobile Safari/537.36")
-        setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+    val apiKey = BuildConfig.YOUTUBE_API_KEY.trim()
+    if (apiKey.isBlank()) {
+        throw IllegalStateException("YouTube API key is not configured. Add YOUTUBE_API_KEY to your local Gradle properties.")
     }
+
+    val params = listOf(
+        "part" to "snippet",
+        "q" to (query + " kids"),
+        "type" to "video",
+        "maxResults" to "20",
+        "safeSearch" to "strict",
+        "regionCode" to "MA",
+        "relevanceLanguage" to "ar",
+        "key" to apiKey,
+    ).joinToString("&") { (key, value) ->
+        java.net.URLEncoder.encode(key, "UTF-8") + "=" + java.net.URLEncoder.encode(value, "UTF-8")
+    }
+    val connection = (URL("https://www.googleapis.com/youtube/v3/search?$params").openConnection() as HttpURLConnection).apply {
+        requestMethod = "GET"
+        connectTimeout = 10000
+        readTimeout = 10000
+        setRequestProperty("Accept", "application/json")
+    }
+
     return try {
-        val html = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-        val markerIndex = html.indexOf("ytInitialData").takeIf { it >= 0 } ?: return emptyList()
-        val start = html.indexOf('{', markerIndex).takeIf { it >= 0 } ?: return emptyList()
-        var depth = 0
-        var inString = false
-        var escaped = false
-        var end = -1
-        for (index in start until html.length) {
-            val ch = html[index]
-            if (inString) {
-                if (escaped) escaped = false
-                else if (ch == '\\') escaped = true
-                else if (ch == '"') inString = false
-            } else {
-                when (ch) {
-                    '"' -> inString = true
-                    '{' -> depth++
-                    '}' -> {
-                        depth--
-                        if (depth == 0) {
-                            end = index + 1
-                            break
-                        }
-                    }
-                }
-            }
+        val responseCode = connection.responseCode
+        val responseStream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+        val responseText = responseStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+        if (responseCode !in 200..299) {
+            val apiMessage = runCatching {
+                JSONObject(responseText).optJSONObject("error")?.optString("message").orEmpty()
+            }.getOrDefault("")
+            throw IllegalStateException(
+                if (apiMessage.isNotBlank()) "YouTube API: $apiMessage"
+                else "YouTube API request failed (HTTP $responseCode)"
+            )
         }
-        if (end <= start) return emptyList()
-        val root = JSONObject(html.substring(start, end))
+
+        val items = JSONObject(responseText).optJSONArray("items") ?: return emptyList()
         val found = mutableListOf<MediaEntry>()
-        fun visit(value: Any?) {
-            when (value) {
-                is JSONObject -> {
-                    val renderer = value.optJSONObject("videoRenderer")
-                    if (renderer != null) {
-                        val id = renderer.optString("videoId")
-                        val titleNode = renderer.optJSONObject("title")
-                        val title = titleNode?.optString("simpleText").orEmpty().ifBlank {
-                            val runs = titleNode?.optJSONArray("runs")
-                            if (runs != null && runs.length() > 0) runs.optJSONObject(0)?.optString("text").orEmpty() else ""
-                        }
-                        val thumbs = renderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
-                        val thumb = if (thumbs != null && thumbs.length() > 0) thumbs.optJSONObject(thumbs.length() - 1)?.optString("url").orEmpty() else ""
-                        if (id.isNotBlank() && title.isNotBlank() && found.none { it.id == "youtube:" + id }) {
-                            found += MediaEntry(
-                                id = "youtube:" + id,
-                                title = title,
-                                category = "",
-                                streamUrl = "https://www.youtube.com/watch?v=" + id,
-                                logoUrl = thumb.ifBlank { "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg" },
-                                kind = MediaKind.MOVIE,
-                                description = "Kids search result",
-                            )
-                        }
-                    }
-                    val keys = value.keys()
-                    while (keys.hasNext()) visit(value.opt(keys.next()))
-                }
-                is JSONArray -> for (i in 0 until value.length()) visit(value.opt(i))
-            }
+        for (index in 0 until items.length()) {
+            val item = items.optJSONObject(index) ?: continue
+            val videoId = item.optJSONObject("id")?.optString("videoId").orEmpty()
+            val snippet = item.optJSONObject("snippet") ?: continue
+            val title = snippet.optString("title").trim()
+            if (videoId.isBlank() || title.isBlank()) continue
+
+            val thumbnails = snippet.optJSONObject("thumbnails")
+            val thumbnail = thumbnails?.optJSONObject("high")?.optString("url").orEmpty()
+                .ifBlank { thumbnails?.optJSONObject("medium")?.optString("url").orEmpty() }
+                .ifBlank { thumbnails?.optJSONObject("default")?.optString("url").orEmpty() }
+
+            found += MediaEntry(
+                id = "youtube:" + videoId,
+                title = title,
+                category = "YouTube Kids",
+                streamUrl = "https://www.youtube.com/watch?v=" + videoId,
+                logoUrl = thumbnail.ifBlank { "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg" },
+                kind = MediaKind.MOVIE,
+                description = "YouTube Kids result • " + snippet.optString("channelTitle"),
+            )
         }
-        visit(root)
-        found.take(20)
+        found.distinctBy { it.id }.take(20)
     } finally {
         connection.disconnect()
     }
