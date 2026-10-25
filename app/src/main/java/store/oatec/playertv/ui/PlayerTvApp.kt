@@ -2438,6 +2438,10 @@ private fun PlaybackDialog(
                 if (position > 5_000L) player.seekTo(position)
             }
             player.playWhenReady = true
+        } else {
+            // Do not leave Media3 decoding audio/video in the background when MPV is selected.
+            player.stop()
+            player.clearMediaItems()
         }
     }
 
@@ -2475,7 +2479,7 @@ private fun PlaybackDialog(
                                 keepScreenOn = true
                                 runCatching {
                                     initialize(MpvOptions(tlsCaFile = mpvCaBundle))
-                                    playFile(entry.streamUrl)
+                                    playFile(entry.streamUrl).getOrThrow()
                                 }.onSuccess {
                                     loading = false
                                 }.onFailure { failure ->
