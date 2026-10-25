@@ -54,19 +54,20 @@ jobs:
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest --no-daemon
 
-      - name: Build release APKs with YouTube API key
+      - name: Build release APKs
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY || vars.YOUTUBE_API_KEY }}
+          OPEN_SUBTITLES_API_KEY: ${{ secrets.OPEN_SUBTITLES_API_KEY }}
         shell: bash
         run: |
-          # Mask the value in logs even when configured as a repository variable.
+          # Mask keys in logs. OpenSubtitles is optional so the app builds without it.
           echo "::add-mask::$YOUTUBE_API_KEY"
+          echo "::add-mask::$OPEN_SUBTITLES_API_KEY"
           if [ -z "$YOUTUBE_API_KEY" ]; then
             echo "::error::Configure YOUTUBE_API_KEY in GitHub Actions Secrets (recommended) or Variables."
             exit 1
           fi
-          gradle :app:assembleRelease --no-daemon -PYOUTUBE_API_KEY="$YOUTUBE_API_KEY"
-
+          gradle :app:assembleRelease --no-daemon -PYOUTUBE_API_KEY="$YOUTUBE_API_KEY" -POPEN_SUBTITLES_API_KEY="$OPEN_SUBTITLES_API_KEY"
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
