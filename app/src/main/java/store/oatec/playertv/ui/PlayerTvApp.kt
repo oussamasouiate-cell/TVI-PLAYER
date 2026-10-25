@@ -2382,6 +2382,7 @@ private fun PlaybackDialog(
         }
     }
     var mpvAttempt by remember(entry.id) { mutableStateOf(0) }
+    var mpvView by remember(entry.id, mpvAttempt) { mutableStateOf<MpvView?>(null) }
     val channelIndex = channels.indexOfFirst { it.id == entry.id }
     val latestEntry by rememberUpdatedState(entry)
     val latestPreferences by rememberUpdatedState(preferences)
@@ -2424,7 +2425,7 @@ private fun PlaybackDialog(
         }
     }
 
-    LaunchedEffect(entry.id, activeEngine) {
+    LaunchedEffect(entry.id, activeEngine, mpvAttempt, mpvView) {
         error = ""
         loading = true
         if (entry.kind != MediaKind.LIVE) preferences.recordWatched(entry.id)
@@ -2442,6 +2443,20 @@ private fun PlaybackDialog(
             // Do not leave Media3 decoding audio/video in the background when MPV is selected.
             player.stop()
             player.clearMediaItems()
+            val view = mpvView ?: return@LaunchedEffect
+            runCatching {
+                // MPV initialization is expensive on some TV boxes, so prepare its native core off the UI thread.
+                val prepared = withContext(Dispatchers.IO) {
+                    view.prepare(MpvOptions(tlsCaFile = mpvCaBundle))
+                }
+                view.attach(prepared)
+                view.playFile(entry.streamUrl).getOrThrow()
+            }.onSuccess {
+                loading = false
+            }.onFailure { failure ->
+                loading = false
+                error = failure.localizedMessage ?: "MPV could not start this stream."
+            }
         }
     }
 
@@ -2477,16 +2492,7 @@ private fun PlaybackDialog(
                         factory = { viewContext ->
                             MpvView(viewContext).apply {
                                 keepScreenOn = true
-                                runCatching {
-                                    initialize(MpvOptions(tlsCaFile = mpvCaBundle))
-                                    playFile(entry.streamUrl).getOrThrow()
-                                }.onSuccess {
-                                    loading = false
-                                }.onFailure { failure ->
-                                    loading = false
-                                    error = failure.localizedMessage ?: "MPV could not start this stream."
-                                }
-                            }
+                            }.also { mpvView = it }
                         },
                         modifier = Modifier.fillMaxSize(),
                         onRelease = { it.destroy() },
