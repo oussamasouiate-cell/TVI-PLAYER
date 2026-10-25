@@ -6,6 +6,8 @@ import android.content.res.Configuration
 import android.content.Intent
 import android.net.Uri
 import android.view.KeyEvent as AndroidKeyEvent
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -3052,6 +3054,7 @@ private fun KidsDashboard(
     onLoadMore: () -> Unit,
     onOpenYoutubeKids: () -> Unit,
 ) {
+    var showYoutubeKidsSearch by rememberSaveable { mutableStateOf(false) }
     var selectedKidCategory by remember(section) { mutableStateOf("الكل") }
     val allVisible = remember(section, movies, series, channels, search) {
         val source = when (section) {
@@ -3110,8 +3113,8 @@ private fun KidsDashboard(
                     Text("مغامرات، كرتون وتعلّم فبلاصة وحدة!", color = Color(0xFFE5F4FF), fontSize = if (compact) 11.sp else 14.sp)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(onClick = onOpenYoutubeKids, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
-                        Text("▶ YouTube Kids", fontSize = 11.sp, maxLines = 1)
+                    OutlinedButton(onClick = { showYoutubeKidsSearch = true }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+                        Text("🔎 YouTube للأطفال", fontSize = 11.sp, maxLines = 1)
                     }
                     OutlinedButton(onClick = onExit, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
                         Text("👨 Parent / PIN", fontSize = 11.sp, maxLines = 1)
@@ -3235,6 +3238,88 @@ private fun KidsDashboard(
                         }
                     }
                 }
+            }
+        }
+    }
+    if (showYoutubeKidsSearch) {
+        YouTubeKidsSearchDialog(onDismiss = { showYoutubeKidsSearch = false })
+    }
+}
+
+
+@Composable
+private fun YouTubeKidsSearchDialog(onDismiss: () -> Unit) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var submittedQuery by rememberSaveable { mutableStateOf("") }
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize().padding(8.dp),
+            color = Color(0xFF101B36),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(2.dp, Color(0xFFFFD76A)),
+        ) {
+            Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("🔎 فيديوهات YouTube للأطفال", color = Color(0xFFFFD76A), fontSize = 18.sp, fontWeight = FontWeight.Black)
+                        Text("البحث كيبقى داخل TVI KIDS", color = Color(0xFFE5F4FF), fontSize = 11.sp)
+                    }
+                    TextButton(onClick = onDismiss) { Text("رجوع ✕", color = Color.White) }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        label = { Text("شنو بغيتي تتفرج؟") },
+                    )
+                    Button(
+                        onClick = {
+                            submittedQuery = query.trim()
+                            val target = Uri.parse("https://www.youtubekids.com/").buildUpon()
+                                .appendPath("search")
+                                .appendQueryParameter("q", submittedQuery)
+                                .build()
+                            webViewRef?.loadUrl(target.toString())
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7657D7), contentColor = Color.White),
+                    ) { Text("بحث") }
+                }
+                AndroidView(
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).background(Color.White),
+                    factory = { context ->
+                        WebView(context).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.allowFileAccess = false
+                            settings.allowContentAccess = false
+                            webViewClient = WebViewClient()
+                            webViewRef = this
+                            loadUrl("https://www.youtubekids.com/")
+                        }
+                    },
+                    update = { view ->
+                        webViewRef = view
+                        if (submittedQuery.isNotBlank()) {
+                            val expected = Uri.parse("https://www.youtubekids.com/").buildUpon()
+                                .appendPath("search")
+                                .appendQueryParameter("q", submittedQuery)
+                                .build().toString()
+                            if (view.url != expected) view.loadUrl(expected)
+                        }
+                    },
+                    onRelease = { view ->
+                        view.stopLoading()
+                        view.destroy()
+                        if (webViewRef === view) webViewRef = null
+                    },
+                )
             }
         }
     }
