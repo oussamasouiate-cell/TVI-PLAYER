@@ -233,9 +233,13 @@ class MediaCatalogStore(context: Context) : SQLiteOpenHelper(
         return results
     }
 
-    fun count(sourceId: String, section: String, search: String = ""): Long {
+    fun count(sourceId: String, section: String, search: String = "", category: String? = null): Long {
         val where = StringBuilder("source_id=? AND section=?")
         val args = mutableListOf(sourceId, section)
+        if (!category.isNullOrBlank() && category != "All") {
+            where.append(" AND category=?")
+            args += category
+        }
         if (search.isNotBlank()) {
             val pattern = "%${escapeLike(search.trim())}%"
             where.append(" AND (title LIKE ? ESCAPE '\\' OR category LIKE ? ESCAPE '\\')")
