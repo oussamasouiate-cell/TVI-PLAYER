@@ -3356,7 +3356,7 @@ private fun KidsDashboard(
     var youtubeLoading by remember { mutableStateOf(false) }
     var youtubeError by remember { mutableStateOf("") }
     var selectedKidCategory by remember(section) { mutableStateOf("الكل") }
-    LaunchedEffect(search) {
+    LaunchedEffect(search, section) {
         val query = search.trim()
         if (query.length < 2 || section == Section.LIVE) {
             youtubeResults = emptyList()
@@ -3366,7 +3366,7 @@ private fun KidsDashboard(
             delay(450)
             youtubeLoading = true
             youtubeError = ""
-            runCatching { withContext(Dispatchers.IO) { searchYouTubeKids(query) } }
+            runCatching { withContext(Dispatchers.IO) { searchYouTubeKids(query, section) } }
                 .onSuccess { youtubeResults = it }
                 .onFailure { youtubeResults = emptyList(); youtubeError = it.message ?: "تعذر تحميل نتائج YouTube" }
             youtubeLoading = false
@@ -3378,7 +3378,10 @@ private fun KidsDashboard(
             Section.SERIES -> series
             else -> movies
         }
-        val catalogueResults = source.filter { search.isBlank() || it.title.contains(search, ignoreCase = true) || it.category.contains(search, ignoreCase = true) }
+        val catalogueResults = source.filter {
+            search.isBlank() || it.title.contains(search, ignoreCase = true) ||
+                it.category.contains(search, ignoreCase = true) || it.genre.contains(search, ignoreCase = true)
+        }
         if (search.isBlank() || section == Section.LIVE) catalogueResults
         else (catalogueResults + youtubeResults).distinctBy { it.id }
     }
@@ -3428,7 +3431,15 @@ private fun KidsDashboard(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f)) {
                     Text("🌈 TVI KIDS 🦄", color = Color(0xFFFFD76A), fontSize = if (compact) 23.sp else 34.sp, fontWeight = FontWeight.Black)
-                    Text("مغامرات، كرتون وتعلّم فبلاصة وحدة!", color = Color(0xFFE5F4FF), fontSize = if (compact) 11.sp else 14.sp)
+                    Text(
+                        when (section) {
+                            Section.LIVE -> "قنوات الأطفال المباشرة 📺"
+                            Section.SERIES -> "مسلسلات وحلقات للصغار 🦸"
+                            else -> "أفلام وكرتون ومغامرات 🎨"
+                        },
+                        color = Color(0xFFE5F4FF),
+                        fontSize = if (compact) 11.sp else 14.sp,
+                    )
                 }
                 OutlinedButton(onClick = onExit, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) {
                     Text("👨 Parent / PIN", fontSize = 11.sp, maxLines = 1)
@@ -3668,7 +3679,10 @@ private fun KidsYouTubePlayerDialog(videoId: String, onDismiss: () -> Unit) {
     }
 }
 
-private fun searchYouTubeKids(query: String): List<MediaEntry> {
+private fun searchYouTubeKids(query: String, section: Section): List<MediaEntry> {
+    require(section == Section.MOVIES || section == Section.SERIES) {
+        "YouTube search is only available in the Kids movies and series sections."
+    }
     val apiKey = BuildConfig.YOUTUBE_API_KEY.trim()
     if (apiKey.isBlank()) {
         throw IllegalStateException("YouTube API key is not configured. Add YOUTUBE_API_KEY to your local Gradle properties.")
@@ -3676,7 +3690,10 @@ private fun searchYouTubeKids(query: String): List<MediaEntry> {
 
     val params = listOf(
         "part" to "snippet",
-        "q" to (query + " kids"),
+        "q" to when (section) {
+            Section.SERIES -> "$query kids cartoon series episode"
+            else -> "$query kids cartoon movie animation"
+        },
         "type" to "video",
         "maxResults" to "20",
         "safeSearch" to "strict",
@@ -3724,10 +3741,10 @@ private fun searchYouTubeKids(query: String): List<MediaEntry> {
             found += MediaEntry(
                 id = "youtube:" + videoId,
                 title = title,
-                category = "YouTube Kids",
+                category = if (section == Section.SERIES) "YouTube Kids • مسلسل" else "YouTube Kids • فيلم وكرتون",
                 streamUrl = "https://www.youtube.com/watch?v=" + videoId,
                 logoUrl = thumbnail.ifBlank { "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg" },
-                kind = MediaKind.MOVIE,
+                kind = if (section == Section.SERIES) MediaKind.SERIES else MediaKind.MOVIE,
                 description = "YouTube Kids result • " + snippet.optString("channelTitle"),
             )
         }
