@@ -3669,11 +3669,11 @@ private fun searchYouTubeKids(query: String): List<MediaEntry> {
                             found += MediaEntry(
                                 id = "youtube:" + id,
                                 title = title,
-                                category = "YouTube",
+                                category = "",
                                 streamUrl = "https://www.youtube.com/watch?v=" + id,
                                 logoUrl = thumb.ifBlank { "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg" },
                                 kind = MediaKind.MOVIE,
-                                description = "YouTube kids search result",
+                                description = "Kids search result",
                             )
                         }
                     }
