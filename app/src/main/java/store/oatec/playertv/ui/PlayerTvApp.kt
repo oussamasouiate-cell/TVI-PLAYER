@@ -2055,7 +2055,13 @@ private fun LiveScreen(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("LIVE TV", color = Lime, fontSize = 18.sp, fontWeight = FontWeight.Black)
                 Spacer(Modifier.weight(1f))
-                OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) { Text("← Back", fontSize = 11.sp) }
+                OutlinedButton(onClick = onHome, modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 76.dp).onPreviewKeyEvent { event ->
+                    val key = event.nativeKeyEvent
+                    if (key.action == AndroidKeyEvent.ACTION_DOWN && key.keyCode in setOf(AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_NUMPAD_ENTER, AndroidKeyEvent.KEYCODE_SPACE)) {
+                        onHome()
+                        true
+                    } else false
+                }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) { Text("← Back", fontSize = 11.sp) }
             }
             OutlinedTextField(
                 value = search, onValueChange = onSearch, modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp),
@@ -2220,7 +2226,13 @@ private fun MediaScreen(
     }
     Column(Modifier.fillMaxSize().background(Color(0xFF09090B)).padding(horizontal = 18.dp, vertical = 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) { Text("← Back", fontSize = 11.sp) }
+            OutlinedButton(onClick = onHome, modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 76.dp).onPreviewKeyEvent { event ->
+                    val key = event.nativeKeyEvent
+                    if (key.action == AndroidKeyEvent.ACTION_DOWN && key.keyCode in setOf(AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_NUMPAD_ENTER, AndroidKeyEvent.KEYCODE_SPACE)) {
+                        onHome()
+                        true
+                    } else false
+                }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) { Text("← Back", fontSize = 11.sp) }
             Column(Modifier.weight(1f)) {
                 Text(if (isMovies) "FILMS" else title.uppercase(), color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.Black)
                 Text("${filtered.size} titles · Discover your next favourite", color = TextMuted, fontSize = 11.sp)
@@ -2401,7 +2413,13 @@ private fun OfflineDownloadsScreen(
     }
     Column(Modifier.fillMaxSize().background(Ink).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = onHome) { Text("← Back") }
+            OutlinedButton(onClick = onHome, modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 76.dp).onPreviewKeyEvent { event ->
+                    val key = event.nativeKeyEvent
+                    if (key.action == AndroidKeyEvent.ACTION_DOWN && key.keyCode in setOf(AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_NUMPAD_ENTER, AndroidKeyEvent.KEYCODE_SPACE)) {
+                        onHome()
+                        true
+                    } else false
+                }) { Text("← Back") }
             Spacer(Modifier.weight(1f))
             Column(horizontalAlignment = Alignment.End) {
                 Text("DOWNLOADS", color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.Black)
@@ -2579,7 +2597,13 @@ private fun SeriesScreen(
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onHome, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) { Text("← Back", fontSize = 11.sp) }
+            OutlinedButton(onClick = onHome, modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 76.dp).onPreviewKeyEvent { event ->
+                    val key = event.nativeKeyEvent
+                    if (key.action == AndroidKeyEvent.ACTION_DOWN && key.keyCode in setOf(AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_NUMPAD_ENTER, AndroidKeyEvent.KEYCODE_SPACE)) {
+                        onHome()
+                        true
+                    } else false
+                }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) { Text("← Back", fontSize = 11.sp) }
             Column(Modifier.weight(1f)) {
                 Text("SERIES", color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.Black)
                 Text("Seasons and episodes • ${filtered.size} titles", color = TextMuted, fontSize = 11.sp)
