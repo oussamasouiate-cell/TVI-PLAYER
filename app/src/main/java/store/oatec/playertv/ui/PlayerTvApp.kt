@@ -109,6 +109,8 @@ import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -2952,6 +2954,23 @@ private fun PlaybackDialog(
     var showAudioDialog by remember { mutableStateOf(false) }
     var activeEngine by remember(entry.id) { mutableStateOf(preferences.playbackEngine()) }
     var subtitleMessage by remember { mutableStateOf("") }
+    val externalAudioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null && activeEngine == "exoplayer") {
+            runCatching {
+                runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                val factory = DefaultMediaSourceFactory(context)
+                val videoSource = factory.createMediaSource(MediaItem.fromUri(entry.streamUrl))
+                val audioSource = factory.createMediaSource(MediaItem.fromUri(uri))
+                val position = player.currentPosition.coerceAtLeast(0L)
+                player.setMediaSource(MergingMediaSource(videoSource, audioSource), position)
+                player.prepare()
+                player.playWhenReady = true
+                subtitleMessage = "External audio added. If tracks do not align, choose a compatible audio file."
+            }.onFailure { subtitleMessage = it.localizedMessage ?: "Could not combine this audio file with the stream." }
+        } else if (uri != null) {
+            subtitleMessage = "External audio is currently supported with ExoPlayer only."
+        }
+    }
     val subtitlePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null && activeEngine == "exoplayer") {
             runCatching {
@@ -3178,6 +3197,7 @@ private fun PlaybackDialog(
                 if (entry.kind != MediaKind.LIVE) {
                     if (activeEngine == "exoplayer") OutlinedButton(onClick = { showAudioDialog = true }) { Text("Audio tracks") }
                     OutlinedButton(onClick = { subtitlePicker.launch(arrayOf("text/*", "application/x-subrip", "application/octet-stream")) }) { Text("Load subtitles") }
+                    OutlinedButton(onClick = { externalAudioPicker.launch(arrayOf("audio/*", "application/octet-stream")) }) { Text("External audio") }
                 }
                 if (entry.kind == MediaKind.LIVE && qualityOptions.size > 1) {
                     OutlinedButton(onClick = { showQualityDialog = true }) { Text("Choose quality") }
