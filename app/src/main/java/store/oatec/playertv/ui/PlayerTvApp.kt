@@ -106,6 +106,9 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import io.github.yuroyami.libmpvkt.Mpv
+import io.github.yuroyami.libmpvkt.MpvCommands
+import io.github.yuroyami.libmpvkt.getOrThrow
 import io.github.yuroyami.libmpvkt.view.MpvOptions
 import io.github.yuroyami.libmpvkt.view.MpvView
 import coil.compose.AsyncImage
@@ -2446,11 +2449,11 @@ private fun PlaybackDialog(
             val view = mpvView ?: return@LaunchedEffect
             runCatching {
                 // MPV initialization is expensive on some TV boxes, so prepare its native core off the UI thread.
-                val prepared = withContext(Dispatchers.IO) {
+                val prepared: Mpv = withContext(Dispatchers.IO) {
                     view.prepare(MpvOptions(tlsCaFile = mpvCaBundle))
                 }
                 view.attach(prepared)
-                view.playFile(entry.streamUrl).getOrThrow()
+                prepared.command(MpvCommands.loadFile(entry.streamUrl)).getOrThrow()
             }.onSuccess {
                 loading = false
             }.onFailure { failure ->
