@@ -951,6 +951,10 @@ fun PlayerTvApp() {
                         sourceStore.save(sources)
                         activeSourceId = source.id
                         showAddSource = false
+                        // Adding a source from Settings must trigger the same catalogue-load
+                        // path as the initial setup flow, rather than leaving the user on
+                        // Settings with the new source selected but not loaded.
+                        navigateTo(Section.LIVE)
                     },
                 )
             }
