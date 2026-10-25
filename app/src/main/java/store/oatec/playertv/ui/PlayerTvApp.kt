@@ -2756,8 +2756,7 @@ private fun AddSourceDialog(onDismiss: () -> Unit, onSave: (PlayerSource) -> Uni
                     val queryUser = parsed.getQueryParameter("username").orEmpty().ifBlank { username.trim() }
                     val queryPassword = parsed.getQueryParameter("password").orEmpty().ifBlank { password }
                     val finalUrl = if (type == SourceType.M3U.name &&
-                        !parsed.lastPathSegment.equals("get.php", true) &&
-                        !parsed.lastPathSegment.equals("playlist.m3u", true) &&
+                        parsed.path.orEmpty().trim('/') .isBlank() &&
                         queryUser.isNotBlank() && queryPassword.isNotBlank()
                     ) {
                         enteredUrl.trimEnd('/') + "/get.php?username=" +
