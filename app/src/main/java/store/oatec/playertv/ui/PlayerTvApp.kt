@@ -415,12 +415,12 @@ fun PlayerTvApp() {
             Section.SERIES -> Section.SERIES
             else -> return@LaunchedEffect
         }
-        val loadKey = "${source.id}:${when (requestedSection) {
-            Section.LIVE -> CatalogSection.LIVE.name
-            Section.MOVIES -> CatalogSection.MOVIES.name
-            Section.SERIES -> CatalogSection.SERIES.name
+        val loadKey = when (requestedSection) {
+            Section.LIVE -> "${source.id}:${CatalogSection.LIVE.name}"
+            Section.MOVIES -> "${source.id}:${CatalogSection.MOVIES.name}"
+            Section.SERIES -> "${source.id}:${CatalogSection.SERIES.name}"
             else -> return@LaunchedEffect
-        }}"
+        }
         if (loadKey !in loadedCatalogs) refresh(source, requestedSection)
     }
 
