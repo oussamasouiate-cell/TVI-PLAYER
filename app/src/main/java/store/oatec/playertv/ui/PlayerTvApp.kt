@@ -123,6 +123,7 @@ import java.net.URL
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import org.json.JSONObject
+import org.json.JSONArray
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -3313,14 +3314,34 @@ private fun KidsDashboard(
     onLoadMore: () -> Unit,
 ) {
     var showYoutubeKidsSearch by rememberSaveable { mutableStateOf(false) }
+    var youtubeResults by remember { mutableStateOf<List<MediaEntry>>(emptyList()) }
+    var youtubeLoading by remember { mutableStateOf(false) }
+    var youtubeError by remember { mutableStateOf("") }
     var selectedKidCategory by remember(section) { mutableStateOf("الكل") }
-    val allVisible = remember(section, movies, series, channels, search) {
+    LaunchedEffect(search) {
+        val query = search.trim()
+        if (query.length < 2) {
+            youtubeResults = emptyList()
+            youtubeError = ""
+            youtubeLoading = false
+        } else {
+            delay(450)
+            youtubeLoading = true
+            youtubeError = ""
+            runCatching { withContext(Dispatchers.IO) { searchYouTubeKids(query) } }
+                .onSuccess { youtubeResults = it }
+                .onFailure { youtubeResults = emptyList(); youtubeError = it.message ?: "تعذر تحميل نتائج YouTube" }
+            youtubeLoading = false
+        }
+    }
+    val allVisible = remember(section, movies, series, channels, search, youtubeResults) {
         val source = when (section) {
             Section.LIVE -> channels
             Section.SERIES -> series
             else -> movies
         }
-        source.filter { search.isBlank() || it.title.contains(search, ignoreCase = true) || it.category.contains(search, ignoreCase = true) }
+        val catalogueResults = source.filter { search.isBlank() || it.title.contains(search, ignoreCase = true) || it.category.contains(search, ignoreCase = true) }
+        if (search.isBlank()) catalogueResults else (catalogueResults + youtubeResults).distinctBy { it.id }
     }
     val kidCategories = remember(allVisible) {
         allVisible.map { it.category.trim() }.filter { it.isNotBlank() }.distinctBy { it.lowercase() }.sortedBy { it.lowercase() }.take(18)
@@ -3425,7 +3446,12 @@ private fun KidsDashboard(
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("🧸 🌟 🚀", fontSize = if (compact) 30.sp else 44.sp)
-                        Text(if (search.isBlank()) "مازال ما كاين حتى محتوى أطفال مصنّف هنا." else "ما لقيناش هاد الشي، جرّب كلمة أخرى 😊", color = Color(0xFFE5F4FF))
+                        Text(when {
+                            youtubeLoading -> "كنقلبو ليك على فيديوهات مناسبة... 🔎"
+                            search.isNotBlank() && youtubeError.isNotBlank() -> "ما لقيناش نتائج محلية، وYouTube ما تجاوبش دابا."
+                            search.isBlank() -> "مازال ما كاين حتى محتوى أطفال مصنّف هنا."
+                            else -> "ما لقيناش هاد الشي، جرّب كلمة أخرى 😊"
+                        }, color = Color(0xFFE5F4FF))
                     }
                 }
             } else {
@@ -3469,7 +3495,8 @@ private fun KidsDashboard(
                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(end = 8.dp)) {
                                     items(itemsForShelf.distinctBy { it.id }, key = { "kids:${shelfIndex}:${it.id}" }) { entry ->
                                         Column(Modifier.width(if (compact) 104.dp else 132.dp).clickable {
-                                            if (section == Section.MOVIES) onMovieDetails(entry) else onPlay(entry)
+                                            if (entry.id.startsWith("youtube:")) onPlayYoutube(entry.id.removePrefix("youtube:"))
+                                            else if (section == Section.MOVIES) onMovieDetails(entry) else onPlay(entry)
                                         }) {
                                             Surface(
                                                 color = Color(0xFF24456B),
