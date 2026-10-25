@@ -8,6 +8,12 @@ import android.content.res.Configuration
 import android.content.Intent
 import android.os.Build
 import android.net.Uri
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.view.KeyEvent as AndroidKeyEvent
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -2954,6 +2960,11 @@ private fun PlaybackDialog(
     var showAudioDialog by remember { mutableStateOf(false) }
     var activeEngine by remember(entry.id) { mutableStateOf(preferences.playbackEngine()) }
     var subtitleMessage by remember { mutableStateOf("") }
+    var showOnlineSubtitleDialog by remember { mutableStateOf(false) }
+    var onlineSubtitleQuery by remember(entry.id) { mutableStateOf(entry.title) }
+    var onlineSubtitleLanguage by remember { mutableStateOf("ar") }
+    var onlineSubtitleLoading by remember { mutableStateOf(false) }
+    val playbackScope = rememberCoroutineScope()
     val externalAudioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null && activeEngine == "exoplayer") {
             runCatching {
@@ -3196,6 +3207,7 @@ private fun PlaybackDialog(
             Row(Modifier.align(Alignment.TopEnd).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (entry.kind != MediaKind.LIVE) {
                     if (activeEngine == "exoplayer") OutlinedButton(onClick = { showAudioDialog = true }) { Text("Audio tracks") }
+                    OutlinedButton(onClick = { showOnlineSubtitleDialog = true }) { Text("Online subtitles") }
                     OutlinedButton(onClick = { subtitlePicker.launch(arrayOf("text/*", "application/x-subrip", "application/octet-stream")) }) { Text("Load subtitles") }
                     OutlinedButton(onClick = { externalAudioPicker.launch(arrayOf("audio/*", "application/octet-stream")) }) { Text("External audio") }
                 }
@@ -3206,6 +3218,46 @@ private fun PlaybackDialog(
                     OutlinedButton(onClick = { showList = !showList }) { Text(if (showList) "Hide channels" else "Channels") }
                 }
                 OutlinedButton(onClick = onDismiss) { Text("Close") }
+            }
+            if (showOnlineSubtitleDialog) {
+                AlertDialog(
+                    onDismissRequest = { if (!onlineSubtitleLoading) showOnlineSubtitleDialog = false },
+                    title = { Text("Search online subtitles") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedTextField(value = onlineSubtitleQuery, onValueChange = { onlineSubtitleQuery = it }, label = { Text("Movie or series title") }, singleLine = true)
+                            OutlinedTextField(value = onlineSubtitleLanguage, onValueChange = { onlineSubtitleLanguage = it.take(2).lowercase() }, label = { Text("Language code (ar, en, fr)") }, singleLine = true)
+                            Text(if (BuildConfig.OPEN_SUBTITLES_API_KEY.isBlank()) "OpenSubtitles API key is not configured in GitHub Actions." else "Search OpenSubtitles and download a matching subtitle into the player.", color = TextMuted, fontSize = 12.sp)
+                            if (onlineSubtitleLoading) CircularProgressIndicator()
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(enabled = !onlineSubtitleLoading && BuildConfig.OPEN_SUBTITLES_API_KEY.isNotBlank() && onlineSubtitleQuery.isNotBlank(), onClick = {
+                            onlineSubtitleLoading = true
+                            playbackScope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    runCatching { downloadOnlineSubtitle(context.cacheDir, onlineSubtitleQuery, onlineSubtitleLanguage, BuildConfig.OPEN_SUBTITLES_API_KEY) }
+                                }
+                                result.onSuccess { file ->
+                                    runCatching {
+                                        val mime = if (file.extension.equals("vtt", true)) MimeTypes.TEXT_VTT else MimeTypes.APPLICATION_SUBRIP
+                                        val subtitle = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(file)).setMimeType(mime)
+                                            .setLanguage(onlineSubtitleLanguage).setLabel("Online subtitle").build()
+                                        val item = MediaItem.Builder().setUri(entry.streamUrl).setSubtitleConfigurations(listOf(subtitle)).build()
+                                        val position = player.currentPosition.coerceAtLeast(0L)
+                                        player.setMediaItem(item, position)
+                                        player.prepare()
+                                        player.playWhenReady = true
+                                        subtitleMessage = "Online subtitle loaded. Enable it in the player's subtitle menu if needed."
+                                        showOnlineSubtitleDialog = false
+                                    }.onFailure { subtitleMessage = it.localizedMessage ?: "Subtitle downloaded but could not be loaded." }
+                                }.onFailure { subtitleMessage = it.localizedMessage ?: "Could not find or download an online subtitle." }
+                                onlineSubtitleLoading = false
+                            }
+                        }) { Text("Search and load") }
+                    },
+                    dismissButton = { TextButton(onClick = { showOnlineSubtitleDialog = false }, enabled = !onlineSubtitleLoading) { Text("Cancel") } },
+                )
             }
             if (subtitleMessage.isNotBlank()) {
                 Text(subtitleMessage, modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
@@ -4117,4 +4169,58 @@ private fun importLocalPlaylist(context: Context, uri: Uri): PlayerSource {
         type = SourceType.LOCAL_M3U,
         serverUrl = destination.absolutePath,
     )
+}
+
+private fun downloadOnlineSubtitle(cacheDir: File, query: String, language: String, apiKey: String): File {
+    fun request(url: String, method: String = "GET", body: String? = null): String {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            connectTimeout = 12000
+            readTimeout = 20000
+            setRequestProperty("Api-Key", apiKey)
+            setRequestProperty("User-Agent", "OATEC-PlayerTv v1.0")
+            setRequestProperty("Accept", "application/json")
+            if (body != null) {
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+            }
+        }
+        try {
+            if (body != null) connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) throw IllegalStateException("OpenSubtitles request failed (HTTP $code). Check the API key and quota.")
+            return response
+        } finally { connection.disconnect() }
+    }
+    val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+    val lang = java.net.URLEncoder.encode(language.ifBlank { "en" }, "UTF-8")
+    val search = JSONObject(request("https://api.opensubtitles.com/api/v1/subtitles?query=$encodedQuery&languages=$lang"))
+    val data = search.optJSONArray("data") ?: throw IllegalStateException("No subtitles found for this title.")
+    var fileId = 0
+    var extension = "srt"
+    for (i in 0 until data.length()) {
+        val item = data.optJSONObject(i) ?: continue
+        val attrs = item.optJSONObject("attributes") ?: continue
+        val files = attrs.optJSONArray("files") ?: continue
+        if (files.length() > 0) {
+            val candidate = files.optJSONObject(0) ?: continue
+            fileId = candidate.optInt("file_id", 0)
+            extension = candidate.optString("file_name", "subtitle.srt").substringAfterLast('.', "srt").let { if (it.equals("vtt", true)) "vtt" else "srt" }
+            if (fileId > 0) break
+        }
+    }
+    if (fileId <= 0) throw IllegalStateException("No downloadable subtitle was found.")
+    val download = JSONObject(request("https://api.opensubtitles.com/api/v1/download", "POST", JSONObject().put("file_id", fileId).toString()))
+    val link = download.optString("link")
+    if (link.isBlank()) throw IllegalStateException("OpenSubtitles did not return a download link.")
+    val connection = (URL(link).openConnection() as HttpURLConnection).apply { connectTimeout = 12000; readTimeout = 30000 }
+    try {
+        if (connection.responseCode !in 200..299) throw IllegalStateException("Subtitle download failed (HTTP ${connection.responseCode}).")
+        val file = File(cacheDir, "online-subtitle-${System.currentTimeMillis()}.$extension")
+        connection.inputStream.use { input -> file.outputStream().use { output -> input.copyTo(output) } }
+        if (file.length() == 0L) { file.delete(); throw IllegalStateException("Downloaded subtitle file is empty.") }
+        return file
+    } finally { connection.disconnect() }
 }
