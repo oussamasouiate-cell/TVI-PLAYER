@@ -3190,7 +3190,7 @@ private fun KidsDashboard(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(onClick = { showYoutubeKidsSearch = true }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
-                        Text("🔎 YouTube للأطفال", fontSize = 11.sp, maxLines = 1)
+                        Text("▶ YouTube", fontSize = 11.sp, maxLines = 1)
                     }
                     OutlinedButton(onClick = onExit, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
                         Text("👨 Parent / PIN", fontSize = 11.sp, maxLines = 1)
@@ -3342,8 +3342,8 @@ private fun YouTubeKidsSearchDialog(onDismiss: () -> Unit) {
             Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("🔎 فيديوهات YouTube للأطفال", color = Color(0xFFFFD76A), fontSize = 18.sp, fontWeight = FontWeight.Black)
-                        Text("البحث كيبقى داخل TVI KIDS", color = Color(0xFFE5F4FF), fontSize = 11.sp)
+                        Text("▶ YouTube", color = Color(0xFFFFD76A), fontSize = 18.sp, fontWeight = FontWeight.Black)
+                        Text("قلب وشاهد الفيديو هنا داخل TVI PLAYER", color = Color(0xFFE5F4FF), fontSize = 11.sp)
                     }
                     TextButton(onClick = onDismiss) { Text("رجوع ✕", color = Color.White) }
                 }
@@ -3358,7 +3358,7 @@ private fun YouTubeKidsSearchDialog(onDismiss: () -> Unit) {
                     Button(
                         onClick = {
                             submittedQuery = query.trim()
-                            val target = Uri.parse("https://www.youtubekids.com/").buildUpon()
+                            val target = Uri.parse("https://m.youtube.com/").buildUpon()
                                 .appendPath("search")
                                 .appendQueryParameter("q", submittedQuery)
                                 .build()
@@ -3377,7 +3377,7 @@ private fun YouTubeKidsSearchDialog(onDismiss: () -> Unit) {
                             settings.allowContentAccess = false
                             webViewClient = WebViewClient()
                             webViewRef = this
-                            loadUrl("https://www.youtubekids.com/")
+                            loadUrl("https://m.youtube.com/")
                         }
                     },
                     update = { view ->
