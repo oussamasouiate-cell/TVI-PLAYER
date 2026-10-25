@@ -124,7 +124,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.snapshotFlow
+import androidx.compose.runtime.snapshotFlow
 import store.oatec.playertv.data.PlayerPreferences
 import store.oatec.playertv.data.OatecAboutRepository
 import store.oatec.playertv.data.SecureSourceStore
