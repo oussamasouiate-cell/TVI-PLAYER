@@ -44,7 +44,7 @@ jobs:
           profile: pixel_2
           script: |
             set -eu
-            APK="app/build/outputs/apk/debug/app-debug.apk"
+            APK="${{ github.workspace }}/app/build/outputs/apk/debug/app-debug.apk"
             test -f "$APK"
             adb install -r "$APK"
             adb shell am force-stop store.oatec.playertv
