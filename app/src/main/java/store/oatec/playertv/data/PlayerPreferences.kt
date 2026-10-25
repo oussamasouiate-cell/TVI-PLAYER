@@ -229,14 +229,14 @@ class PlayerPreferences(context: Context) {
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
-    /** Selected playback engine: auto, exoplayer, or libvlc. */
-    fun playbackEngine(): String = preferences.getString(PLAYBACK_ENGINE_KEY, "auto")
+    /** Selected playback engine: exoplayer (default) or mpv. */
+    fun playbackEngine(): String = preferences.getString(PLAYBACK_ENGINE_KEY, "exoplayer")
         ?.lowercase()
-        ?.takeIf { it in setOf("auto", "exoplayer", "libvlc") } ?: "auto"
+        ?.takeIf { it in setOf("exoplayer", "mpv") } ?: "exoplayer"
 
     fun setPlaybackEngine(engine: String) {
         val normalized = engine.trim().lowercase()
-        if (normalized in setOf("auto", "exoplayer", "libvlc")) {
+        if (normalized in setOf("exoplayer", "mpv")) {
             preferences.edit().putString(PLAYBACK_ENGINE_KEY, normalized).apply()
         }
     }
