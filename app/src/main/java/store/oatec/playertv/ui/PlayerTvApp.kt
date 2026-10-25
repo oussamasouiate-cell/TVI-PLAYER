@@ -2454,7 +2454,7 @@ private fun PlaybackDialog(
                     view.prepare(MpvOptions(tlsCaFile = mpvCaBundle))
                 }
                 view.attach(prepared)
-                prepared.command(MpvCommands.loadFile(entry.streamUrl)).getOrThrow()
+                view.playFile(entry.streamUrl).getOrThrow()
             }.onSuccess {
                 loading = false
             }.onFailure { failure ->
