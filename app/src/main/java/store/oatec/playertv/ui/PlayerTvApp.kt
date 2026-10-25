@@ -403,15 +403,25 @@ fun PlayerTvApp() {
         pendingSeries = null
     }
 
-    // Preload every catalogue as soon as a source is selected, not only after
-    // the user opens its tab. refresh() reads saved pages immediately and then
-    // loads uncached sections in the background, while catalogLoadMutex bounds
-    // provider requests so we do not hit the Xtream server concurrently.
-    LaunchedEffect(activeSourceId) {
+    // Load only the section the user is viewing. Each section reads its saved
+    // SQLite catalogue first, so returning to it is fast; uncached sections are
+    // imported in the background only when opened instead of downloading all
+    // 36k+ items at startup.
+    LaunchedEffect(activeSourceId, section, loadedCatalogs) {
         val source = sources.firstOrNull { it.id == activeSourceId } ?: return@LaunchedEffect
-        listOf(Section.LIVE, Section.MOVIES, Section.SERIES).forEach { requestedSection ->
-            refresh(source, requestedSection)
+        val requestedSection = when (currentSection) {
+            Section.LIVE -> Section.LIVE
+            Section.MOVIES -> Section.MOVIES
+            Section.SERIES -> Section.SERIES
+            else -> return@LaunchedEffect
         }
+        val loadKey = "${source.id}:${when (requestedSection) {
+            Section.LIVE -> CatalogSection.LIVE.name
+            Section.MOVIES -> CatalogSection.MOVIES.name
+            Section.SERIES -> CatalogSection.SERIES.name
+            else -> return@LaunchedEffect
+        }}"
+        if (loadKey !in loadedCatalogs) refresh(source, requestedSection)
     }
 
     LaunchedEffect(activeSourceId, section, search, loadedCatalogs, selectedCategory, preferenceRevision) {
