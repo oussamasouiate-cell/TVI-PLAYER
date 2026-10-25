@@ -196,25 +196,36 @@ private fun activateOatecCode(context: Context, code: String): PlayerSource {
             })
         }
         val primary = response.optJSONObject("config")?.optJSONObject("primary")
-            ?: throw IOException("السيرفر ما رجّعش معلومات Xtream للحساب.")
+            ?: throw IOException("السيرفر ما رجّعش إعدادات المصدر للحساب.")
         val server = primary.optString("server").trim().trimEnd('/')
         val username = primary.optString("username").trim()
         val password = primary.optString("password")
-        if (server.isBlank() || username.isBlank() || password.isBlank()) {
-            throw IOException("الكود صحيح، ولكن الحساب فلوحة الأدمن ناقصو Server URL أو Username أو Password ديال Xtream.")
+        val m3uUrl = primary.optString("url").trim()
+        val xtreamUri = runCatching { Uri.parse(server) }.getOrNull()
+        val validXtream = !xtreamUri?.host.isNullOrBlank() &&
+            xtreamUri?.scheme in setOf("http", "https") &&
+            username.isNotBlank() && password.isNotBlank()
+        val m3uUri = runCatching { Uri.parse(m3uUrl) }.getOrNull()
+        val validM3u = !m3uUri?.host.isNullOrBlank() && m3uUri?.scheme in setOf("http", "https")
+        when {
+            validXtream -> PlayerSource(
+                id = UUID.randomUUID().toString(),
+                name = "OATEC Subscription",
+                type = SourceType.XTREAM,
+                serverUrl = server,
+                username = username,
+                password = password,
+            )
+            validM3u -> PlayerSource(
+                id = UUID.randomUUID().toString(),
+                name = "OATEC Subscription",
+                type = SourceType.M3U,
+                serverUrl = m3uUrl,
+            )
+            else -> throw IOException(
+                "كود التفعيل صحيح، ولكن الحساب فلوحة الأدمن ما فيه لا بيانات Xtream كاملة ولا رابط M3U صالح. راجع إعدادات الحساب."
+            )
         }
-        val parsed = runCatching { Uri.parse(server) }.getOrNull()
-        if (parsed?.host.isNullOrBlank() || parsed?.scheme !in setOf("http", "https")) {
-            throw IOException("رابط Xtream المرتبط بالحساب غير صالح. راجع إعدادات الحساب فلوحة الأدمن.")
-        }
-        return PlayerSource(
-            id = UUID.randomUUID().toString(),
-            name = "OATEC Subscription",
-            type = SourceType.XTREAM,
-            serverUrl = server,
-            username = username,
-            password = password,
-        )
     } finally { connection.disconnect() }
 }
 private enum class Section(val label: String) {
