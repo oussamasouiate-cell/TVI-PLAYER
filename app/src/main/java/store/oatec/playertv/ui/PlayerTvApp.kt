@@ -1031,6 +1031,15 @@ fun PlayerTvApp() {
                     searching = trailerSearchBusy,
                     message = if (kidsModeActive) "" else trailerSearchMessage,
                     onDismiss = { selectedDetails = null; selectedTrailerYoutubeId = ""; trailerSearchMessage = "" },
+                    onDownload = {
+                        if (media.kind == MediaKind.MOVIE) {
+                            runCatching { offlineDownloadStore.enqueue(media) }
+                                .onSuccess { message = "بدأ تحميل: ${media.title}" }
+                                .onFailure { message = it.message ?: "تعذر تحميل هذا المحتوى." }
+                        } else {
+                            message = "تحميل المسلسلات كيتطلب اختيار الحلقة أولاً."
+                        }
+                    },
                     onWatch = {
                         selectedDetails = null
                         selectedTrailerYoutubeId = ""
@@ -2497,43 +2506,54 @@ private fun MoviePreviewOverlay(
     message: String,
     onDismiss: () -> Unit,
     onWatch: () -> Unit,
+    onDownload: () -> Unit,
 ) {
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
-        Box(Modifier.fillMaxSize().background(Color(0xE609090B))) {
+        Box(Modifier.fillMaxSize().background(Color.Transparent)) {
             if (trailerVideoId.isNotBlank()) {
                 AndroidView(
-                    modifier = Modifier.fillMaxWidth().fillMaxHeight(0.76f).align(Alignment.TopCenter),
+                    modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
                         WebView(ctx).apply {
                             setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+                            isVerticalScrollBarEnabled = false
+                            isHorizontalScrollBarEnabled = false
+                            overScrollMode = android.view.View.OVER_SCROLL_NEVER
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
                             settings.mediaPlaybackRequiresUserGesture = false
                             settings.allowFileAccess = false
                             settings.allowContentAccess = false
-                            webViewClient = WebViewClient()
-                            webChromeClient = WebChromeClient()
-                            settings.mediaPlaybackRequiresUserGesture = false
+                            settings.loadWithOverviewMode = true
+                            settings.useWideViewPort = true
+                            settings.setSupportZoom(false)
+                            settings.builtInZoomControls = false
+                            settings.displayZoomControls = false
                             settings.javaScriptCanOpenWindowsAutomatically = false
                             settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                            // Load the YouTube player directly instead of nesting it in an iframe.
-                            // Muted autoplay is the most compatible option for Android TV/WebView.
-                            loadUrl("https://www.youtube-nocookie.com/embed/$trailerVideoId?autoplay=1&mute=1&controls=1&playsinline=1&rel=0&enablejsapi=1")
+                            webViewClient = WebViewClient()
+                            webChromeClient = WebChromeClient()
+                            val html = """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:transparent}iframe{position:fixed;inset:0;width:100%;height:100%;border:0;overflow:hidden}</style></head><body><iframe src="https://www.youtube-nocookie.com/embed/$trailerVideoId?autoplay=1&mute=1&controls=0&playsinline=1&rel=0&modestbranding=1&enablejsapi=1&origin=https%3A%2F%2Fwww.youtube-nocookie.com" title="Trailer preview" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></body></html>"""
+                            loadDataWithBaseURL("https://www.youtube-nocookie.com/", html, "text/html", "UTF-8", null)
                         }
                     },
+                    update = { view ->
+                        // Recreate the player when the selected video changes; never keep the previous trailer.
+                        if (view.tag != trailerVideoId) {
+                            view.tag = trailerVideoId
+                            val html = """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:transparent}iframe{position:fixed;inset:0;width:100%;height:100%;border:0;overflow:hidden}</style></head><body><iframe src="https://www.youtube-nocookie.com/embed/$trailerVideoId?autoplay=1&mute=1&controls=0&playsinline=1&rel=0&modestbranding=1&enablejsapi=1&origin=https%3A%2F%2Fwww.youtube-nocookie.com" title="Trailer preview" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></body></html>"""
+                            view.loadDataWithBaseURL("https://www.youtube-nocookie.com/", html, "text/html", "UTF-8", null)
+                        }
+                    },
+                    onRelease = { it.stopLoading(); it.destroy() },
                 )
-                Box(
-                    Modifier.fillMaxWidth().fillMaxHeight(0.76f).align(Alignment.TopCenter)
-                        .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.22f), Color.Transparent, Color(0xE609090B)))),
-                )
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.48f), Color.Transparent, Color(0xE609090B)))))
             } else {
-                Box(
-                    Modifier.fillMaxWidth().fillMaxHeight(0.76f).background(Brush.verticalGradient(listOf(Color(0xFF24201A), Color(0xFF09090B)))),
-                    contentAlignment = Alignment.Center,
-                ) {
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF24201A), Color(0xFF09090B)))), contentAlignment = Alignment.Center) {
                     Text(if (searching) "Finding trailer…" else "Trailer preview unavailable", color = TextMuted)
                 }
             }
@@ -2546,9 +2566,8 @@ private fun MoviePreviewOverlay(
                 if (details.isNotBlank()) Text(details, color = TextMuted, fontSize = 13.sp)
                 if (message.isNotBlank()) Text(message, color = TextMuted, fontSize = 12.sp, maxLines = 2)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = onWatch, colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)) {
-                        Text("▶  Watch")
-                    }
+                    Button(onClick = onWatch, colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)) { Text("▶  Watch") }
+                    OutlinedButton(onClick = onDownload) { Text("⬇  Download") }
                     OutlinedButton(onClick = onDismiss) { Text("Back") }
                 }
             }
@@ -3808,28 +3827,32 @@ private fun KidsDashboard(
 private fun searchYouTubeTrailer(entry: MediaEntry): String? {
     val apiKey = BuildConfig.YOUTUBE_API_KEY.trim()
     if (apiKey.isBlank()) throw IllegalStateException("YouTube API key is not configured.")
-    val title = buildString {
-        append(entry.title.trim())
-        val year = entry.year.ifBlank { entry.releaseDate.take(4) }
-        if (year.isNotBlank()) append(" ").append(year)
-        append(" official trailer")
-    }
+    val canonicalTitle = entry.title.trim().replace(Regex("\\s+"), " ")
+    if (canonicalTitle.length < 2) return null
+    val year = entry.year.ifBlank { entry.releaseDate.take(4) }.filter(Char::isDigit).take(4)
+    val query = buildList {
+        add("\\"$canonicalTitle\\"")
+        if (year.isNotBlank()) add(year)
+        if (entry.genre.isNotBlank()) add(entry.genre.split(",", "|", "/", "·").first().trim())
+        add(if (entry.kind == MediaKind.SERIES) "official series trailer" else "official movie trailer")
+    }.joinToString(" ")
     val params = listOf(
         "part" to "snippet",
-        "q" to title,
+        "q" to query,
         "type" to "video",
         "videoEmbeddable" to "true",
-        "maxResults" to "8",
-        "safeSearch" to "moderate",
+        "maxResults" to "15",
+        "safeSearch" to "strict",
         "regionCode" to "MA",
+        "relevanceLanguage" to "en",
         "key" to apiKey,
     ).joinToString("&") { (key, value) ->
         java.net.URLEncoder.encode(key, "UTF-8") + "=" + java.net.URLEncoder.encode(value, "UTF-8")
     }
     val connection = (URL("https://www.googleapis.com/youtube/v3/search?$params").openConnection() as HttpURLConnection).apply {
         requestMethod = "GET"
-        connectTimeout = 7000
-        readTimeout = 7000
+        connectTimeout = 10000
+        readTimeout = 10000
         setRequestProperty("Accept", "application/json")
     }
     return try {
@@ -3837,20 +3860,30 @@ private fun searchYouTubeTrailer(entry: MediaEntry): String? {
         val stream = if (code in 200..299) connection.inputStream else connection.errorStream
         val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
         if (code !in 200..299) {
-            val message = runCatching { JSONObject(body).optJSONObject("error")?.optString("message").orEmpty() }.getOrDefault("")
-            throw IOException(message.ifBlank { "YouTube trailer search failed (HTTP $code)." })
+            val apiMessage = runCatching { JSONObject(body).optJSONObject("error")?.optString("message").orEmpty() }.getOrDefault("")
+            throw IOException(apiMessage.ifBlank { "YouTube trailer search failed (HTTP $code)." })
         }
         val items = JSONObject(body).optJSONArray("items") ?: return null
-        for (i in 0 until items.length()) {
-            val item = items.optJSONObject(i) ?: continue
+        val normalizedTitle = canonicalTitle.lowercase().replace(Regex("[^\\p{L}\\p{N} ]"), " ").replace(Regex("\\s+"), " ").trim()
+        val titleTokens = normalizedTitle.split(" ").filter { it.length > 2 }.toSet()
+        if (titleTokens.isEmpty()) return null
+        val candidates = (0 until items.length()).mapNotNull { index ->
+            val item = items.optJSONObject(index) ?: return@mapNotNull null
             val id = item.optJSONObject("id")?.optString("videoId").orEmpty()
-            val snippet = item.optJSONObject("snippet") ?: continue
+            val snippet = item.optJSONObject("snippet") ?: return@mapNotNull null
             val candidateTitle = snippet.optString("title").lowercase()
-            if (id.isNotBlank() && (candidateTitle.contains("trailer") || candidateTitle.contains("teaser"))) return id
+            if (id.isBlank() || !(candidateTitle.contains("trailer") || candidateTitle.contains("teaser"))) return@mapNotNull null
+            val normalizedCandidate = candidateTitle.replace(Regex("[^\\p{L}\\p{N} ]"), " ").replace(Regex("\\s+"), " ").trim()
+            val candidateTokens = normalizedCandidate.split(" ").toSet()
+            val overlap = titleTokens.count { it in candidateTokens }
+            val titleScore = overlap.toFloat() / titleTokens.size.toFloat()
+            val yearMatches = year.isBlank() || candidateTitle.contains(year)
+            val seriesMatches = entry.kind != MediaKind.SERIES ||
+                listOf("series", "season", "official trailer", "tv show").any { candidateTitle.contains(it) }
+            if (titleScore < 0.75f || !yearMatches || !seriesMatches) return@mapNotNull null
+            Triple(id, titleScore + if (yearMatches && year.isNotBlank()) 0.1f else 0f, snippet.optString("channelTitle"))
         }
-        (0 until items.length()).asSequence()
-            .mapNotNull { items.optJSONObject(it)?.optJSONObject("id")?.optString("videoId") }
-            .firstOrNull { it.isNotBlank() }
+        candidates.maxByOrNull { it.second }?.first
     } finally {
         connection.disconnect()
     }
