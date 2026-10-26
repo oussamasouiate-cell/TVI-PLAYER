@@ -3024,6 +3024,8 @@ private fun PlaybackDialog(
     var showList by remember { mutableStateOf(false) }
     var showQualityDialog by remember { mutableStateOf(false) }
     var showAudioDialog by remember { mutableStateOf(false) }
+    var showMpvSettings by remember { mutableStateOf(false) }
+    var mpvPaused by remember(entry.id) { mutableStateOf(false) }
     var activeEngine by remember(entry.id) { mutableStateOf(preferences.playbackEngine()) }
     var subtitleMessage by remember { mutableStateOf("") }
     var showOnlineSubtitleDialog by remember { mutableStateOf(false) }
@@ -3117,15 +3119,10 @@ private fun PlaybackDialog(
                         return
                     }
                 }
-                // 4K HEVC/AV1 streams may be unsupported by the device's Media3 decoder.
-                // Try the bundled native MPV engine for decoder/format failures instead of stopping outright.
-                val decoderFailure = playbackException.errorCode in setOf(
-                    PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
-                    PlaybackException.ERROR_CODE_DECODING_FAILED,
-                    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
-                )
-                if (latestEngine == "exoplayer" && decoderFailure) {
-                    error = "Media3 decoder cannot play this format. Trying MPV…"
+                // Retry failed movie/series and live streams with MPV; it supports additional
+                // containers, codecs, and IPTV stream formats that may fail in Media3.
+                if (latestEngine == "exoplayer") {
+                    error = "ExoPlayer could not play this stream. Trying MPV…"
                     activeEngine = "mpv"
                     return
                 }
@@ -3311,6 +3308,64 @@ private fun PlaybackDialog(
                 }
                 OutlinedButton(onClick = onDismiss) { Text("Close") }
             }
+            }
+            if (entry.kind != MediaKind.LIVE && activeEngine == "mpv") {
+                Row(
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(start = 12.dp, end = 12.dp, bottom = 28.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedButton(onClick = {
+                        val view = mpvView
+                        if (view != null) view.timePos = ((view.timePos ?: 0.0) - 10.0).coerceAtLeast(0.0)
+                    }) { Text("−10s") }
+                    Button(onClick = {
+                        val view = mpvView
+                        if (view != null) {
+                            view.paused = !(view.paused ?: false)
+                            mpvPaused = view.paused ?: !mpvPaused
+                        }
+                    }) { Text(if (mpvPaused) "Resume" else "Pause") }
+                    OutlinedButton(onClick = {
+                        val view = mpvView
+                        if (view != null) {
+                            val current = view.timePos ?: 0.0
+                            val duration = view.duration ?: Double.MAX_VALUE
+                            view.timePos = (current + 10.0).coerceAtMost(duration)
+                        }
+                    }) { Text("+10s") }
+                    OutlinedButton(onClick = { showMpvSettings = true }) { Text("Player settings") }
+                }
+            }
+            if (showMpvSettings) {
+                AlertDialog(
+                    onDismissRequest = { showMpvSettings = false },
+                    title = { Text("Player settings") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Choose the playback engine or restore the default player.")
+                            Text("Current engine: MPV", color = TextMuted, fontSize = 12.sp)
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            preferences.setPlaybackEngine("exoplayer")
+                            activeEngine = "exoplayer"
+                            mpvPaused = false
+                            showMpvSettings = false
+                        }) { Text("Default player (ExoPlayer)") }
+                    },
+                    dismissButton = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            TextButton(onClick = {
+                                mpvAttempt += 1
+                                mpvPaused = false
+                                showMpvSettings = false
+                            }) { Text("Restart MPV") }
+                            TextButton(onClick = { showMpvSettings = false }) { Text("Close") }
+                        }
+                    },
+                )
             }
             if (showOnlineSubtitleDialog) {
                 AlertDialog(
