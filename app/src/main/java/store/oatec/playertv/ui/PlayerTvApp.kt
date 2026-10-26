@@ -3217,7 +3217,7 @@ private fun PlaybackDialog(
                             subtitleLanguages = listOf("ar", "ara", "en", "eng", "fr", "fre"),
                             // Automatically discover adjacent external subtitle files where supported.
                             // Prefer hardware decoding where available for high-resolution HEVC streams.
-                            extra = mapOf("sub-auto" to "all", "hwdec" to "auto-safe"),
+                            extra = mapOf("sub-auto" to "all", "hwdec" to if (mpvAttempt > 0) "no" else "auto-safe"),
                         ),
                     )
                 }
@@ -3233,8 +3233,15 @@ private fun PlaybackDialog(
             }.onSuccess {
                 loading = false
             }.onFailure { failure ->
-                loading = false
-                error = failure.localizedMessage ?: "MPV could not start this stream."
+                if (mpvAttempt == 0) {
+                    // Some TV boxes fail with their hardware decoder on specific codecs/streams.
+                    // Recreate MPV once with software decoding before showing a terminal error.
+                    error = "MPV is retrying with software decoding…"
+                    mpvAttempt += 1
+                } else {
+                    loading = false
+                    error = failure.localizedMessage ?: "MPV could not start this stream. Check the source URL or device codec support."
+                }
             }
         }
     }
