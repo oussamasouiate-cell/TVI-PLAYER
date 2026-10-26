@@ -2508,6 +2508,26 @@ private fun MoviePreviewOverlay(
     onWatch: () -> Unit,
     onDownload: () -> Unit,
 ) {
+    DisposableEffect(context, entry.kind) {
+        val activity = generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }
+            .filterIsInstance<Activity>().firstOrNull()
+        val decorView = activity?.window?.decorView
+        val previousUiVisibility = decorView?.systemUiVisibility ?: 0
+        if (entry.kind == MediaKind.LIVE && decorView != null) {
+            decorView.systemUiVisibility = (
+                android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                )
+        }
+        onDispose {
+            if (decorView != null) decorView.systemUiVisibility = previousUiVisibility
+        }
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
@@ -3251,7 +3271,8 @@ private fun PlaybackDialog(
                     factory = { viewContext ->
                         PlayerView(viewContext).apply {
                             this.player = player
-                            useController = true
+                            // Live TV is a clean picture-only screen; movie playback keeps its controls.
+                            useController = entry.kind != MediaKind.LIVE
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                             keepScreenOn = true
                         }
@@ -3260,16 +3281,8 @@ private fun PlaybackDialog(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
-            if (entry.kind == MediaKind.LIVE) {
-                Column(
-                    Modifier.align(Alignment.TopStart).padding(24.dp)
-                        .background(Ink.copy(alpha = 0.82f), RoundedCornerShape(8.dp)).padding(14.dp),
-                ) {
-                    Text("${(channelIndex + 1).coerceAtLeast(1).toString().padStart(3, '0')}  |  LIVE", color = Lime, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Text(entry.title, color = TextMain, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                    Text(entry.category, color = TextMuted, fontSize = 12.sp)
-                }
-            }
+            // Live TV full-screen deliberately has no title badge, buttons, or other overlays.
+            if (entry.kind != MediaKind.LIVE) {
             Row(Modifier.align(Alignment.TopEnd).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (entry.kind != MediaKind.LIVE) {
                     if (activeEngine == "exoplayer") OutlinedButton(onClick = { showAudioDialog = true }) { Text("Audio tracks") }
@@ -3284,6 +3297,7 @@ private fun PlaybackDialog(
                     OutlinedButton(onClick = { showList = !showList }) { Text(if (showList) "Hide channels" else "Channels") }
                 }
                 OutlinedButton(onClick = onDismiss) { Text("Close") }
+            }
             }
             if (showOnlineSubtitleDialog) {
                 AlertDialog(
