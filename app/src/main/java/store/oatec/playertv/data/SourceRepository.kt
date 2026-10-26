@@ -11,6 +11,8 @@ import java.io.InputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -22,22 +24,50 @@ import store.oatec.playertv.model.SourceCatalog
 import store.oatec.playertv.model.SourceType
 
 class SourceRepository {
-    suspend fun loadCatalog(source: PlayerSource, section: CatalogSection): SourceCatalog {
-        return when (source.type) {
-            SourceType.M3U -> {
-                if (section != CatalogSection.LIVE) return SourceCatalog()
-                val playlist = readText(source.serverUrl)
-                SourceCatalog(liveChannels = parseChannels(playlist, source.id))
+    suspend fun loadCatalog(source: PlayerSource, section: CatalogSection): SourceCatalog =
+        withContext(Dispatchers.IO) {
+            when (source.type) {
+                SourceType.M3U -> {
+                    if (section != CatalogSection.LIVE) return@withContext SourceCatalog()
+                    SourceCatalog(liveChannels = parseChannelsFromStream(source.serverUrl, source.id))
+                }
+                SourceType.LOCAL_M3U -> {
+                    if (section != CatalogSection.LIVE) return@withContext SourceCatalog()
+                    SourceCatalog(liveChannels = parseChannelsFromLocalFile(File(source.serverUrl), source.id))
+                }
+                SourceType.XTREAM -> loadXtreamCatalog(source, section)
             }
-            SourceType.LOCAL_M3U -> {
-                if (section != CatalogSection.LIVE) return SourceCatalog()
-                val file = File(source.serverUrl)
-                require(file.isFile) { "The imported playlist file is missing." }
-                require(file.length() <= MAX_SOURCE_BYTES) { "The playlist exceeds the 512 MB import limit." }
-                SourceCatalog(liveChannels = parseChannels(file.readText(Charsets.UTF_8), source.id))
-            }
-            SourceType.XTREAM -> loadXtreamCatalog(source, section)
         }
+
+    /**
+     * Parse M3U input in bounded batches instead of holding both the full playlist
+     * text and the parsed catalogue in memory at the same time.
+     */
+    private fun parseChannelsFromStream(url: String, sourceId: String): List<MediaEntry> {
+        val channels = ArrayList<MediaEntry>()
+        withResponse(url, MAX_SOURCE_BYTES) { connection ->
+            InputStreamReader(
+                LimitedInputStream(connection.inputStream, MAX_SOURCE_BYTES),
+                Charsets.UTF_8,
+            ).buffered().use { reader ->
+                M3uParser.parseBatched(reader, sourceId, DISPLAY_PAGE_SIZE, MAX_CHANNELS) { batch ->
+                    channels.addAll(batch)
+                }
+            }
+        }
+        return channels
+    }
+
+    private fun parseChannelsFromLocalFile(file: File, sourceId: String): List<MediaEntry> {
+        require(file.isFile) { "The imported playlist file is missing." }
+        require(file.length() <= MAX_SOURCE_BYTES) { "The playlist exceeds the 512 MB import limit." }
+        val channels = ArrayList<MediaEntry>()
+        file.inputStream().bufferedReader(Charsets.UTF_8).use { reader ->
+            M3uParser.parseBatched(reader, sourceId, DISPLAY_PAGE_SIZE, MAX_CHANNELS) { batch ->
+                channels.addAll(batch)
+            }
+        }
+        return channels
     }
 
     /** Parse an Xtream catalogue into bounded batches; retain only the first page for initial rendering. */
@@ -437,22 +467,20 @@ class SourceRepository {
                     continue
                 }
                 if (status !in 200..299) {
-                    val errorBody = runCatching {
-                        connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-                            ?.replace(Regex("\\s+"), " ")?.take(240)
-                    }.getOrNull().orEmpty()
+                    // Do not read an unbounded error body or echo it to the UI: some
+                    // providers include request URLs, credentials, or tokens in errors.
                     val detail = when {
                         status == 401 || status == 403 ->
-                            "The M3U server refused access (HTTP $status). Check the playlist URL, credentials, or provider restrictions."
+                            "The source refused access (HTTP $status). Check the URL, credentials, or provider restrictions."
                         status == 404 ->
-                            "The M3U playlist URL was not found (HTTP 404). Check that you copied the full playlist URL."
+                            "The source URL was not found (HTTP 404). Check that you copied the full playlist URL."
                         status == 429 ->
-                            "The M3U provider is limiting requests (HTTP 429). Wait and try again."
+                            "The provider is limiting requests (HTTP 429). Wait and try again."
                         status == 884 ->
                             "The provider returned HTTP 884. This is not a standard HTTP status; the provider, proxy, or copied URL may be rejecting the request."
-                        else -> "M3U request failed (HTTP $status)."
+                        else -> "Source request failed (HTTP $status)."
                     }
-                    throw IOException(if (errorBody.isBlank()) detail else "$detail Server response: $errorBody")
+                    throw IOException(detail)
                 }
                 return read(connection)
             } finally {
