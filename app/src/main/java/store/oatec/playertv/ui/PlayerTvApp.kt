@@ -673,9 +673,7 @@ fun PlayerTvApp() {
         if (selectedKidsYoutubeId.isNotBlank()) {
             KidsYouTubePlayerDialog(videoId = selectedKidsYoutubeId, onDismiss = { selectedKidsYoutubeId = "" })
         }
-        if (selectedTrailerYoutubeId.isNotBlank() && !kidsModeActive) {
-            YouTubeTrailerDialog(videoId = selectedTrailerYoutubeId, onDismiss = { selectedTrailerYoutubeId = "" })
-        }
+        // Trailer previews appear in the selected title overlay, not in a separate page.
         if (needsInitialSetup) {
             InitialSetupScreen(
                 savedPremiumCode = premiumCode,
@@ -1027,35 +1025,30 @@ fun PlayerTvApp() {
                 )
             }
             selectedDetails?.let { media ->
-                MediaDetailsDialog(
+                LaunchedEffect(media.id, kidsModeActive) {
+                    if (!kidsModeActive) {
+                        selectedTrailerYoutubeId = ""
+                        trailerSearchBusy = true
+                        trailerSearchMessage = ""
+                        runCatching { withContext(Dispatchers.IO) { searchYouTubeTrailer(media) } }
+                            .onSuccess { videoId ->
+                                if (videoId.isNullOrBlank()) trailerSearchMessage = "ما لقيناش تريلر مناسب لهاد العنوان."
+                                else selectedTrailerYoutubeId = videoId
+                            }
+                            .onFailure { trailerSearchMessage = it.message ?: "تعذر البحث عن التريلر." }
+                        trailerSearchBusy = false
+                    }
+                }
+                MoviePreviewOverlay(
                     entry = media,
-                    onDismiss = { selectedDetails = null },
-                    onPlay = {
+                    trailerVideoId = if (kidsModeActive) "" else selectedTrailerYoutubeId,
+                    searching = trailerSearchBusy,
+                    message = if (kidsModeActive) "" else trailerSearchMessage,
+                    onDismiss = { selectedDetails = null; selectedTrailerYoutubeId = ""; trailerSearchMessage = "" },
+                    onWatch = {
                         selectedDetails = null
+                        selectedTrailerYoutubeId = ""
                         selectedMedia = media
-                    },
-                    onBrowseEpisodes = { selectedDetails = null },
-                    trailerSearchBusy = trailerSearchBusy,
-                    trailerSearchMessage = trailerSearchMessage,
-                    onFindTrailer = { item ->
-                        if (!kidsModeActive) scope.launch {
-                            trailerSearchBusy = true
-                            trailerSearchMessage = ""
-                            runCatching { withContext(Dispatchers.IO) { searchYouTubeTrailer(item) } }
-                                .onSuccess { videoId ->
-                                    if (videoId.isNullOrBlank()) trailerSearchMessage = "ما لقيناش تريلر مناسب لهاد العنوان."
-                                    else selectedTrailerYoutubeId = videoId
-                                }
-                                .onFailure { trailerSearchMessage = it.message ?: "تعذر البحث عن التريلر." }
-                            trailerSearchBusy = false
-                        }
-                    },
-                    onDownload = {
-                        scope.launch {
-                            runCatching { withContext(Dispatchers.IO) { offlineDownloadStore.enqueue(media) } }
-                                .onSuccess { message = "Download started: " + media.title }
-                                .onFailure { message = it.message ?: "Could not start download." }
-                        }
                     },
                 )
             }
@@ -2484,6 +2477,68 @@ private fun OfflineDownloadsScreen(
                             }) { Text("حذف", color = ErrorRed) }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoviePreviewOverlay(
+    entry: MediaEntry,
+    trailerVideoId: String,
+    searching: Boolean,
+    message: String,
+    onDismiss: () -> Unit,
+    onWatch: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        Box(Modifier.fillMaxSize().background(Color(0xE609090B))) {
+            if (trailerVideoId.isNotBlank()) {
+                AndroidView(
+                    modifier = Modifier.fillMaxWidth().fillMaxHeight(0.76f).align(Alignment.TopCenter),
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.mediaPlaybackRequiresUserGesture = false
+                            settings.allowFileAccess = false
+                            settings.allowContentAccess = false
+                            webViewClient = WebViewClient()
+                            val html = """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,iframe{margin:0;width:100%;height:100%;border:0;background:#09090b;overflow:hidden}</style></head><body><iframe allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen src="https://www.youtube-nocookie.com/embed/$trailerVideoId?autoplay=1&mute=1&controls=0&modestbranding=1&playsinline=1&rel=0"></iframe></body></html>"""
+                            loadDataWithBaseURL("https://www.youtube-nocookie.com", html, "text/html", "UTF-8", null)
+                        }
+                    },
+                )
+                Box(
+                    Modifier.fillMaxWidth().fillMaxHeight(0.76f).align(Alignment.TopCenter)
+                        .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.22f), Color.Transparent, Color(0xE609090B)))),
+                )
+            } else {
+                Box(
+                    Modifier.fillMaxWidth().fillMaxHeight(0.76f).background(Brush.verticalGradient(listOf(Color(0xFF24201A), Color(0xFF09090B)))),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(if (searching) "Finding trailer…" else "Trailer preview unavailable", color = TextMuted)
+                }
+            }
+            Column(
+                Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 28.dp, vertical = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(entry.title, color = TextMain, fontSize = 28.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                val details = listOf(entry.year.ifBlank { entry.releaseDate.take(4) }, entry.genre, entry.rating).filter { it.isNotBlank() }.joinToString("  ·  ")
+                if (details.isNotBlank()) Text(details, color = TextMuted, fontSize = 13.sp)
+                if (message.isNotBlank()) Text(message, color = TextMuted, fontSize = 12.sp, maxLines = 2)
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = onWatch, colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)) {
+                        Text("▶  Watch")
+                    }
+                    OutlinedButton(onClick = onDismiss) { Text("Back") }
                 }
             }
         }
