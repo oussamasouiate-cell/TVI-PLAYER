@@ -2075,8 +2075,8 @@ private fun LiveScreen(
     }
     var selectedChannel by remember(channels) { mutableStateOf(channels.firstOrNull()) }
     val categories = remember(availableCategories, catalog.liveChannels, preferenceRevision) {
-        (listOf("All", "Favorites", "Hidden") + availableCategories +
-            catalog.liveChannels.map { preferences.categoryFor(it.id, it.category) } +
+        (listOf("All", "Favorites", "Hidden") + AUTO_CHANNEL_CATEGORIES + availableCategories +
+            catalog.liveChannels.map { preferences.categoryFor(it.id, automaticChannelCategory(it)) } +
             preferences.customCategories()
         ).filter(String::isNotBlank).distinct()
     }
@@ -3459,7 +3459,8 @@ private fun OrganizeChannelDialog(
     var channelNumber by rememberSaveable(channel.id) { mutableStateOf(channelNumber(channel, channels, preferences).toString()) }
     var newCategory by rememberSaveable(channel.id) { mutableStateOf("") }
     var error by rememberSaveable(channel.id) { mutableStateOf("") }
-    val categories = (channels.map { it.category } + preferences.customCategories()).distinct().sorted()
+    val categories = (AUTO_CHANNEL_CATEGORIES + channels.map { automaticChannelCategory(it) } +
+        channels.map { it.category } + preferences.customCategories()).filter(String::isNotBlank).distinct().sorted()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit channel") },
@@ -3566,6 +3567,30 @@ private fun EmptyState(title: String, detail: String) {
     }
 }
 
+private val AUTO_CHANNEL_CATEGORIES = listOf(
+    "Sports", "News", "Movies", "Entertainment", "Kids"
+)
+
+/** Lightweight, offline classification. Explicit user/provider categories remain available as fallbacks. */
+private fun automaticChannelCategory(channel: MediaEntry): String {
+    val text = "${channel.title} ${channel.category} ${channel.genre}".lowercase()
+    fun hasAny(vararg terms: String) = terms.any(text::contains)
+    return when {
+        hasAny("bein sport", "beinsports", "sky sport", "sport tv", "sports", "sport", "espn", "dazn",
+            "ssc", "riyadh", "football", "soccer", "match", "sport", "رياضة", "رياضي", "مباريات",
+            "الكأس", "الدوري", "كرة القدم", "مباراة") -> "Sports"
+        hasAny("news", "breaking", "cnn", "bbc news", "al jazeera", "aljazeera", "france 24",
+            "sky news", "العربية", "الجزيرة", "الأخبار", "اخبار", "خبر") -> "News"
+        hasAny("kids", "cartoon", "nickelodeon", "nick jr", "baby tv", "disney junior",
+            "cartoon network", "spacetoon", "mbc3", "jeem", "أطفال", "اطفال", "كرتون", "براعم") -> "Kids"
+        hasAny("movie", "cinema", "film", "hbo", "hollywood", "movies", "ciné", "cinema",
+            "أفلام", "افلام", "فيلم", "سينما") -> "Movies"
+        hasAny("entertainment", "music", "comedy", "drama", "lifestyle", "variety",
+            "ترفيه", "موسيقى", "دراما", "منوعات") -> "Entertainment"
+        else -> channel.category.trim().ifBlank { "Other" }
+    }
+}
+
 private fun visibleChannels(
     catalog: SourceCatalog,
     category: String,
@@ -3573,11 +3598,13 @@ private fun visibleChannels(
     preferences: PlayerPreferences,
 ): List<MediaEntry> = numberedChannels(catalog.liveChannels, preferences).map { it.first }.filter { channel ->
     val hidden = channel.id in preferences.hiddenChannels()
+    val automaticCategory = automaticChannelCategory(channel)
+    val effectiveCategory = preferences.categoryFor(channel.id, automaticCategory)
     (when (category) {
         "All" -> !hidden
         "Favorites" -> !hidden && channel.id in preferences.favorites()
         "Hidden" -> hidden
-        else -> !hidden && preferences.categoryFor(channel.id, channel.category) == category
+        else -> !hidden && effectiveCategory.equals(category, ignoreCase = true)
     }) &&
         (search.isBlank() || channel.title.contains(search, true) || channel.category.contains(search, true))
 }
