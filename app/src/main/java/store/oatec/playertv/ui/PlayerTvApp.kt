@@ -3831,7 +3831,7 @@ private fun searchYouTubeTrailer(entry: MediaEntry): String? {
     if (canonicalTitle.length < 2) return null
     val year = entry.year.ifBlank { entry.releaseDate.take(4) }.filter(Char::isDigit).take(4)
     val query = buildList {
-        add("\\"$canonicalTitle\\"")
+        add(canonicalTitle)
         if (year.isNotBlank()) add(year)
         if (entry.genre.isNotBlank()) add(entry.genre.split(",", "|", "/", "·").first().trim())
         add(if (entry.kind == MediaKind.SERIES) "official series trailer" else "official movie trailer")
