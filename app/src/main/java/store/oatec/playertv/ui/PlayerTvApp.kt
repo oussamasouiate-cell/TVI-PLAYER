@@ -3375,25 +3375,6 @@ private fun PlaybackDialog(
                     title = { Text("Player settings") },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("Playback speed")
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf(0.75, 1.0, 1.25).forEach { speed ->
-                                    OutlinedButton(onClick = {
-                                        runCatching { mpvView?.playbackSpeed = speed }
-                                        mpvPaused = mpvView?.paused ?: mpvPaused
-                                    }) { Text("${speed}x") }
-                                }
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf(1.5, 2.0).forEach { speed ->
-                                    OutlinedButton(onClick = {
-                                        runCatching { mpvView?.playbackSpeed = speed }
-                                    }) { Text("${speed}x") }
-                                }
-                                OutlinedButton(onClick = {
-                                    runCatching { mpvView?.playbackSpeed = 1.0 }
-                                }) { Text("Reset 1x") }
-                            }
                             HorizontalDivider()
                             Text("Choose the playback engine or restore the default player.")
                             Text("Current engine: MPV", color = TextMuted, fontSize = 12.sp)
