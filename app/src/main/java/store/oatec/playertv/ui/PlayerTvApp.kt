@@ -2357,6 +2357,27 @@ private fun MediaScreen(
     }
 }
 
+private fun mediaItemForStream(
+    url: String,
+    subtitles: List<MediaItem.SubtitleConfiguration> = emptyList(),
+): MediaItem {
+    // Some IPTV/Xtream providers use extensionless URLs or put query parameters after the
+    // extension. Read the URI path only, then explicitly identify common adaptive formats.
+    val path = runCatching { Uri.parse(url).path.orEmpty().lowercase() }.getOrDefault("")
+    val mimeType = when {
+        path.endsWith(".m3u8") -> MimeTypes.APPLICATION_M3U8
+        path.endsWith(".mpd") -> MimeTypes.APPLICATION_MPD
+        else -> null
+    }
+    return MediaItem.Builder()
+        .setUri(url)
+        .apply {
+            if (mimeType != null) setMimeType(mimeType)
+            if (subtitles.isNotEmpty()) setSubtitleConfigurations(subtitles)
+        }
+        .build()
+}
+
 private fun qualityLabel(entry: MediaEntry): String {
     val text = "${entry.title} ${entry.category} ${entry.streamUrl}".lowercase()
     return when {
@@ -3038,7 +3059,7 @@ private fun PlaybackDialog(
             runCatching {
                 runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                 val factory = DefaultMediaSourceFactory(context)
-                val videoSource = factory.createMediaSource(MediaItem.fromUri(entry.streamUrl))
+                val videoSource = factory.createMediaSource(mediaItemForStream(entry.streamUrl))
                 val audioSource = factory.createMediaSource(MediaItem.fromUri(uri))
                 val position = player.currentPosition.coerceAtLeast(0L)
                 player.setMediaSource(MergingMediaSource(videoSource, audioSource), position)
@@ -3062,7 +3083,7 @@ private fun PlaybackDialog(
                 }
                 val subtitle = MediaItem.SubtitleConfiguration.Builder(uri).setMimeType(mime)
                     .setLanguage("und").setLabel("External subtitle").build()
-                val mediaItem = MediaItem.Builder().setUri(entry.streamUrl).setSubtitleConfigurations(listOf(subtitle)).build()
+                val mediaItem = mediaItemForStream(entry.streamUrl, listOf(subtitle))
                 val position = player.currentPosition.coerceAtLeast(0L)
                 player.setMediaItem(mediaItem, position)
                 player.prepare()
@@ -3119,15 +3140,15 @@ private fun PlaybackDialog(
                         return
                     }
                 }
+                if (latestEntry.kind != MediaKind.LIVE && latestEngine == "exoplayer" && latestPreferences.resumePlayback()) {
+                    latestPreferences.saveProgress(latestEntry.id, player.currentPosition.coerceAtLeast(0L), player.duration.coerceAtLeast(0L))
+                }
                 // Retry failed movie/series and live streams with MPV; it supports additional
                 // containers, codecs, and IPTV stream formats that may fail in Media3.
                 if (latestEngine == "exoplayer") {
                     error = "ExoPlayer could not play this stream. Trying MPV…"
                     activeEngine = "mpv"
                     return
-                }
-                if (latestEngine == "exoplayer" && latestEntry.kind != MediaKind.LIVE && latestPreferences.resumePlayback()) {
-                    latestPreferences.saveProgress(latestEntry.id, player.currentPosition.coerceAtLeast(0L), player.duration.coerceAtLeast(0L))
                 }
             }
         }
@@ -3174,7 +3195,7 @@ private fun PlaybackDialog(
         if (activeEngine == "exoplayer") {
             player.stop()
             player.clearMediaItems()
-            player.setMediaItem(MediaItem.fromUri(entry.streamUrl))
+            player.setMediaItem(mediaItemForStream(entry.streamUrl))
             player.prepare()
             if (entry.kind != MediaKind.LIVE && preferences.resumePlayback()) {
                 val position = preferences.progress(entry.id)
@@ -3346,7 +3367,27 @@ private fun PlaybackDialog(
                     onDismissRequest = { showMpvSettings = false },
                     title = { Text("Player settings") },
                     text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Playback speed")
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(0.75, 1.0, 1.25).forEach { speed ->
+                                    OutlinedButton(onClick = {
+                                        runCatching { mpvView?.playbackSpeed = speed }
+                                        mpvPaused = mpvView?.paused ?: mpvPaused
+                                    }) { Text("${speed}x") }
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(1.5, 2.0).forEach { speed ->
+                                    OutlinedButton(onClick = {
+                                        runCatching { mpvView?.playbackSpeed = speed }
+                                    }) { Text("${speed}x") }
+                                }
+                                OutlinedButton(onClick = {
+                                    runCatching { mpvView?.playbackSpeed = 1.0 }
+                                }) { Text("Reset 1x") }
+                            }
+                            HorizontalDivider()
                             Text("Choose the playback engine or restore the default player.")
                             Text("Current engine: MPV", color = TextMuted, fontSize = 12.sp)
                         }
@@ -3395,7 +3436,7 @@ private fun PlaybackDialog(
                                         val mime = if (file.extension.equals("vtt", true)) MimeTypes.TEXT_VTT else MimeTypes.APPLICATION_SUBRIP
                                         val subtitle = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(file)).setMimeType(mime)
                                             .setLanguage(onlineSubtitleLanguage).setLabel("Online subtitle").build()
-                                        val item = MediaItem.Builder().setUri(entry.streamUrl).setSubtitleConfigurations(listOf(subtitle)).build()
+                                        val item = mediaItemForStream(entry.streamUrl, listOf(subtitle))
                                         val position = player.currentPosition.coerceAtLeast(0L)
                                         player.setMediaItem(item, position)
                                         player.prepare()
