@@ -3435,6 +3435,14 @@ private fun PlaybackDialog(
                                 player.play()
                             }
                         }) { Text("Retry") }
+                        OutlinedButton(onClick = {
+                            val fallbackEngine = if (activeEngine == "mpv") "exoplayer" else "mpv"
+                            preferences.setPlaybackEngine(fallbackEngine)
+                            activeEngine = fallbackEngine
+                            error = ""
+                            loading = true
+                            mpvPaused = false
+                        }) { Text(if (activeEngine == "mpv") "Try default player" else "Try MPV") }
                     }
                 }
             }
