@@ -76,7 +76,7 @@ class M3uParserTest {
     @Test
     fun preservesStreamUrlQueryParameters() {
         val streamUrl = "https://stream.test/live?username=viewer&token=a%2Fb&quality=4k"
-        val playlist = "#EXTINF:-1,Query stream\\n$streamUrl"
+        val playlist = "#EXTINF:-1,Query stream\n$streamUrl"
 
         assertEquals(streamUrl, M3uParser.parse(playlist, "source-1").single().streamUrl)
     }
