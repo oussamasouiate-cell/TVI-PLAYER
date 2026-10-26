@@ -46,7 +46,7 @@ jobs:
           profile: pixel_2
           script: |
             set -eu
-            APK="$(find "${{ github.workspace }}/app/build/outputs/apk/debug" -maxdepth 2 -type f -name "*.apk" -print -quit)"
+            APK="${{ github.workspace }}/app/build/outputs/apk/debug/app-x86_64-debug.apk"
             test -n "$APK" && test -f "$APK" || { echo "No debug APK found under app/build/outputs/apk/debug"; find "${{ github.workspace }}/app/build/outputs/apk" -maxdepth 4 -type f -print || true; exit 1; }
             adb install -r "$APK"
             adb shell am force-stop store.oatec.playertv
