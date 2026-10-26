@@ -47,7 +47,11 @@ jobs:
           script: |
             set -eu
             APK="${{ github.workspace }}/app/build/outputs/apk/debug/app-x86_64-debug.apk"
-            test -n "$APK" && test -f "$APK" || { echo "No debug APK found under app/build/outputs/apk/debug"; find "${{ github.workspace }}/app/build/outputs/apk" -maxdepth 4 -type f -print || true; exit 1; }
+            if [ ! -f "$APK" ]; then
+              echo "Expected x86_64 debug APK was not found. Available APKs:"
+              find "${{ github.workspace }}/app/build/outputs/apk" -maxdepth 4 -type f -name "*.apk" -print || true
+              exit 1
+            fi
             adb install -r "$APK"
             adb shell am force-stop store.oatec.playertv
             adb shell monkey -p store.oatec.playertv 1
