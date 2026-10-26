@@ -74,6 +74,37 @@ class M3uParserTest {
     }
 
     @Test
+    fun preservesStreamUrlQueryParameters() {
+        val streamUrl = "https://stream.test/live?username=viewer&token=a%2Fb&quality=4k"
+        val playlist = "#EXTINF:-1,Query stream\\n$streamUrl"
+
+        assertEquals(streamUrl, M3uParser.parse(playlist, "source-1").single().streamUrl)
+    }
+
+    @Test
+    fun streamingParserFailsRatherThanSilentlyTruncatingAtLimit() {
+        val playlist = """
+            #EXTM3U
+            #EXTINF:-1,First
+            https://stream.test/first.ts
+            #EXTINF:-1,Second
+            https://stream.test/second.ts
+        """.trimIndent()
+
+        val error = org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            M3uParser.parseBatched(
+                playlist.reader(),
+                "source-1",
+                batchSize = 1,
+                maxChannels = 1,
+                onBatch = {},
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("safe limit"))
+    }
+
+    @Test
     fun stopsAtConfiguredChannelLimit() {
         val playlist = """
             #EXTM3U
