@@ -883,23 +883,8 @@ fun PlayerTvApp() {
                             preferences = preferences,
                             onLoadMore = { loadMore(Section.SERIES) },
                             onSelect = { series ->
-                                val source = activeSource
-                                if (source == null || source.type != SourceType.XTREAM) {
-                                    message = "Series episodes require an Xtream source."
-                                } else {
-                                    pendingSeries = series
-                                    episodes = emptyList()
-                                    episodesBusy = true
-                                    scope.launch {
-                                        runCatching {
-                                            withContext(Dispatchers.IO) {
-                                                repository.loadSeriesEpisodes(source, series.id.substringAfterLast(':'))
-                                            }
-                                        }.onSuccess { episodes = it }
-                                            .onFailure { message = it.message ?: "Could not load episodes." }
-                                        episodesBusy = false
-                                    }
-                                }
+                                // Show the same automatic trailer preview for a series before opening episodes.
+                                selectedDetails = series
                             },
                             onPlay = { selectedMedia = it },
                             onFavorite = { item -> preferences.setFavorite(item.id, item.id !in preferences.favorites()); preferenceRevision++ },
@@ -1049,7 +1034,27 @@ fun PlayerTvApp() {
                     onWatch = {
                         selectedDetails = null
                         selectedTrailerYoutubeId = ""
-                        selectedMedia = media
+                        if (catalog.series.any { it.id == media.id }) {
+                            val source = activeSource
+                            if (source == null || source.type != SourceType.XTREAM) {
+                                message = "Series episodes require an Xtream source."
+                            } else {
+                                pendingSeries = media
+                                episodes = emptyList()
+                                episodesBusy = true
+                                scope.launch {
+                                    runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            repository.loadSeriesEpisodes(source, media.id.substringAfterLast(':'))
+                                        }
+                                    }.onSuccess { episodes = it }
+                                        .onFailure { message = it.message ?: "Could not load episodes." }
+                                    episodesBusy = false
+                                }
+                            }
+                        } else {
+                            selectedMedia = media
+                        }
                     },
                 )
             }
