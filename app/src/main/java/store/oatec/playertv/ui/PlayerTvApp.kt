@@ -3117,6 +3117,19 @@ private fun PlaybackDialog(
                         return
                     }
                 }
+                // 4K HEVC/AV1 streams may be unsupported by the device's Media3 decoder.
+                // Try the bundled native MPV engine for decoder/format failures instead of stopping outright.
+                val decoderFailure = playbackException.errorCode in setOf(
+                    PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+                    PlaybackException.ERROR_CODE_DECODING_FAILED,
+                    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+                    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED_SUBTYPE,
+                )
+                if (latestEngine == "exoplayer" && decoderFailure) {
+                    error = "Media3 decoder cannot play this format. Trying MPV…"
+                    activeEngine = "mpv"
+                    return
+                }
                 if (latestEngine == "exoplayer" && latestEntry.kind != MediaKind.LIVE && latestPreferences.resumePlayback()) {
                     latestPreferences.saveProgress(latestEntry.id, player.currentPosition.coerceAtLeast(0L), player.duration.coerceAtLeast(0L))
                 }
@@ -3186,7 +3199,8 @@ private fun PlaybackDialog(
                             // Prefer Arabic subtitles, then English/French when the stream provides them.
                             subtitleLanguages = listOf("ar", "ara", "en", "eng", "fr", "fre"),
                             // Automatically discover adjacent external subtitle files where supported.
-                            extra = mapOf("sub-auto" to "all"),
+                            // Prefer hardware decoding where available for high-resolution HEVC streams.
+                            extra = mapOf("sub-auto" to "all", "hwdec" to "auto-safe"),
                         ),
                     )
                 }
