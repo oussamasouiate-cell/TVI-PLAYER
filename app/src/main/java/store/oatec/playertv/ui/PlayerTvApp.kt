@@ -3334,6 +3334,10 @@ private fun PlaybackDialog(
                             view.timePos = (current + 10.0).coerceAtMost(duration)
                         }
                     }) { Text("+10s") }
+                    OutlinedButton(onClick = {
+                        runCatching { mpvView?.paused = true }
+                        onDismiss()
+                    }) { Text("Stop") }
                     OutlinedButton(onClick = { showMpvSettings = true }) { Text("Player settings") }
                 }
             }
