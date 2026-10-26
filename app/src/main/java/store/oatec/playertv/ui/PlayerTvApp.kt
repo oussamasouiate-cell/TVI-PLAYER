@@ -2528,26 +2528,6 @@ private fun MoviePreviewOverlay(
         }
     }
 
-    DisposableEffect(context, entry.kind) {
-        val activity = generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }
-            .filterIsInstance<Activity>().firstOrNull()
-        val decorView = activity?.window?.decorView
-        val previousUiVisibility = decorView?.systemUiVisibility ?: 0
-        if (entry.kind == MediaKind.LIVE && decorView != null) {
-            decorView.systemUiVisibility = (
-                android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
-                    or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                    or android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                )
-        }
-        onDispose {
-            if (decorView != null) decorView.systemUiVisibility = previousUiVisibility
-        }
-    }
-
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
@@ -3245,6 +3225,26 @@ private fun PlaybackDialog(
                 loading = false
                 error = failure.localizedMessage ?: "MPV could not start this stream."
             }
+        }
+    }
+
+    DisposableEffect(context, entry.kind) {
+        val activity = generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }
+            .filterIsInstance<Activity>().firstOrNull()
+        val decorView = activity?.window?.decorView
+        val previousUiVisibility = decorView?.systemUiVisibility ?: 0
+        if (entry.kind == MediaKind.LIVE && decorView != null) {
+            decorView.systemUiVisibility = (
+                android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                )
+        }
+        onDispose {
+            if (decorView != null) decorView.systemUiVisibility = previousUiVisibility
         }
     }
 
