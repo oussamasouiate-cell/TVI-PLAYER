@@ -47,11 +47,19 @@ jobs:
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest
 
-      - name: Upload APKs
+      - name: Run Android Lint
+        run: gradle :app:lintDebug
+
+      - name: Build release APKs
+        run: gradle :app:assembleRelease
+
+      - name: Upload debug and release APKs
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: tvi-player-debug-apks
-          path: app/build/outputs/apk/debug/**/*.apk
+          name: tvi-player-apks
+          path: |
+            app/build/outputs/apk/debug/**/*.apk
+            app/build/outputs/apk/release/**/*.apk
           if-no-files-found: error
           retention-days: 7
