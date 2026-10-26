@@ -3608,7 +3608,7 @@ private val AUTO_CHANNEL_CATEGORIES = listOf(
 /** Lightweight, offline classification. Explicit user/provider categories remain available as fallbacks. */
 private fun automaticChannelCategory(channel: MediaEntry): String {
     val text = "${channel.title} ${channel.category} ${channel.genre}".lowercase()
-    fun hasAny(vararg terms: String) = terms.any(text::contains)
+    fun hasAny(vararg terms: String) = terms.any { term -> text.contains(term) }
     return when {
         hasAny("bein sport", "beinsports", "sky sport", "sport tv", "sports", "sport", "espn", "dazn",
             "ssc", "riyadh", "football", "soccer", "match", "sport", "رياضة", "رياضي", "مباريات",
