@@ -17,6 +17,7 @@ import kotlinx.coroutines.withContext
 import android.view.KeyEvent as AndroidKeyEvent
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebChromeClient
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -2509,8 +2510,13 @@ private fun MoviePreviewOverlay(
                             settings.allowFileAccess = false
                             settings.allowContentAccess = false
                             webViewClient = WebViewClient()
-                            val html = """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,iframe{margin:0;width:100%;height:100%;border:0;background:#09090b;overflow:hidden}</style></head><body><iframe allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen src="https://www.youtube-nocookie.com/embed/$trailerVideoId?autoplay=1&mute=1&controls=0&modestbranding=1&playsinline=1&rel=0"></iframe></body></html>"""
-                            loadDataWithBaseURL("https://www.youtube-nocookie.com", html, "text/html", "UTF-8", null)
+                            webChromeClient = WebChromeClient()
+                            settings.mediaPlaybackRequiresUserGesture = false
+                            settings.javaScriptCanOpenWindowsAutomatically = false
+                            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                            // Load the YouTube player directly instead of nesting it in an iframe.
+                            // Muted autoplay is the most compatible option for Android TV/WebView.
+                            loadUrl("https://www.youtube-nocookie.com/embed/$trailerVideoId?autoplay=1&mute=1&controls=1&playsinline=1&rel=0&enablejsapi=1")
                         }
                     },
                 )
