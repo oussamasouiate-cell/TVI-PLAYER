@@ -3123,7 +3123,6 @@ private fun PlaybackDialog(
                     PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
                     PlaybackException.ERROR_CODE_DECODING_FAILED,
                     PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
-                    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED_SUBTYPE,
                 )
                 if (latestEngine == "exoplayer" && decoderFailure) {
                     error = "Media3 decoder cannot play this format. Trying MPV…"
