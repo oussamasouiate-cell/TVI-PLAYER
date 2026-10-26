@@ -46,13 +46,7 @@ jobs:
           profile: pixel_2
           script: |
             set -eu
-            APK="${{ github.workspace }}/app/build/outputs/apk/debug/app-x86_64-debug.apk"
-            if [ ! -f "$APK" ]; then
-              echo "Expected x86_64 debug APK was not found. Available APKs:"
-              find "${{ github.workspace }}/app/build/outputs/apk" -maxdepth 4 -type f -name "*.apk" -print || true
-              exit 1
-            fi
-            adb install -r "$APK"
+            test -f "${{ github.workspace }}/app/build/outputs/apk/debug/app-x86_64-debug.apk" || { echo "Expected x86_64 debug APK was not found. Available APKs:"; find "${{ github.workspace }}/app/build/outputs/apk" -maxdepth 4 -type f -name "*.apk" -print || true; exit 1; }; adb install -r "${{ github.workspace }}/app/build/outputs/apk/debug/app-x86_64-debug.apk"
             adb shell am force-stop store.oatec.playertv
             adb shell monkey -p store.oatec.playertv 1
             sleep 25
