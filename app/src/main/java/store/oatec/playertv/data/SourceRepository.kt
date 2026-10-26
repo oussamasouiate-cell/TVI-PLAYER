@@ -245,14 +245,6 @@ class SourceRepository {
         }
     }
 
-    private fun parseChannels(playlist: String, sourceId: String): List<MediaEntry> {
-        val channels = M3uParser.parse(playlist, sourceId, MAX_CHANNELS + 1)
-        if (channels.size > MAX_CHANNELS) {
-            throw IOException("The playlist contains more than $MAX_CHANNELS channels. Use a smaller playlist.")
-        }
-        return channels
-    }
-
     private suspend fun loadCategoriesOrEmpty(url: String): Map<String, String> =
         runCatching { categoryNames(readArray(url)) }.getOrDefault(emptyMap())
 
