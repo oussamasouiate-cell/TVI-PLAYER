@@ -42,7 +42,7 @@ class SecureSourceStore(context: Context) {
 
     fun save(sources: List<PlayerSource>) {
         val array = JSONArray()
-        sources.forEach { source ->
+        for (source in sources) {
             array.put(
                 JSONObject()
                     .put("id", source.id)
