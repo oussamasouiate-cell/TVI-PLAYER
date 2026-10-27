@@ -149,6 +149,8 @@ import store.oatec.playertv.data.OfflineItem
 import store.oatec.playertv.data.EpgGuideClient
 import store.oatec.playertv.data.EpgProgram
 import store.oatec.playertv.data.EpgRepository
+import store.oatec.playertv.data.KinoCheckClient
+import store.oatec.playertv.data.KinoCheckVideo
 import store.oatec.playertv.model.MediaEntry
 import store.oatec.playertv.model.MediaKind
 import store.oatec.playertv.model.CatalogSection
@@ -268,7 +270,7 @@ private fun activateOatecCode(context: Context, code: String): PlayerSource {
     } finally { connection.disconnect() }
 }
 private enum class Section(val label: String) {
-    HOME("Home"), LIVE("Live TV"), MOVIES("Movies"), SERIES("Series"), DOWNLOADS("Downloads"), SOURCES("Sources"), SETTINGS("Settings"),
+    HOME("Home"), LIVE("Live TV"), MOVIES("Movies"), SERIES("Series"), TRAILERS("Trailers"), DOWNLOADS("Downloads"), SOURCES("Sources"), SETTINGS("Settings"),
 }
 
 @Composable
@@ -889,6 +891,7 @@ fun PlayerTvApp() {
                             onPlay = { selectedMedia = it },
                             onFavorite = { item -> preferences.setFavorite(item.id, item.id !in preferences.favorites()); preferenceRevision++ },
                         )
+                        Section.TRAILERS -> KinoCheckTrailersScreen(onPlay = { videoId -> selectedKidsYoutubeId = videoId })
                         Section.DOWNLOADS -> OfflineDownloadsScreen(store = offlineDownloadStore, onHome = { goBack() }, onPlay = { selectedMedia = it }, onMessage = { message = it })
                         Section.SOURCES -> SourcesScreen(
                             sources = sources,
@@ -1969,6 +1972,7 @@ private fun NavigationRail(
                 Section.LIVE to "LIVE TV",
                 Section.MOVIES to "Movies",
                 Section.SERIES to "Series",
+                Section.TRAILERS to "Trailers",
                 Section.SETTINGS to "Settings",
                 Section.SOURCES to "Sources",
             ).forEach { (destination, label) ->
@@ -4453,4 +4457,105 @@ private fun downloadOnlineSubtitle(cacheDir: File, query: String, language: Stri
         if (file.length() == 0L) { file.delete(); throw IllegalStateException("Downloaded subtitle file is empty.") }
         return file
     } finally { connection.disconnect() }
+}
+
+
+@Composable
+private fun KinoCheckTrailersScreen(
+    onPlay: (String) -> Unit,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val client = remember { KinoCheckClient() }
+    var videos by remember { mutableStateOf<List<KinoCheckVideo>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf("") }
+    var refreshToken by remember { mutableStateOf(0) }
+
+    LaunchedEffect(refreshToken) {
+        loading = true
+        error = ""
+        runCatching {
+            withContext(Dispatchers.IO) {
+                (client.trendingTrailers(language = "en", limit = 30) +
+                    client.latestTrailers(language = "en", limit = 30))
+                    .distinctBy { it.youtubeVideoId }
+                    .take(50)
+            }
+        }.onSuccess { videos = it }
+            .onFailure { error = it.message ?: "تعذر تحميل التريلرات من KinoCheck." }
+        loading = false
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Official Trailers", color = TextMain, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold)
+                Text("Latest and trending movie & series trailers", color = TextMuted, fontSize = 12.sp)
+            }
+            OutlinedButton(onClick = { refreshToken++ }, enabled = !loading) {
+                Text(if (loading) "Loading…" else "Refresh")
+            }
+        }
+        when {
+            loading && videos.isEmpty() -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Lime)
+            }
+            error.isNotBlank() && videos.isEmpty() -> Column(
+                Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(error, color = ErrorRed, fontSize = 13.sp)
+                OutlinedButton(onClick = { refreshToken++ }) { Text("Try again") }
+            }
+            videos.isEmpty() -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Text("ما كايناش تريلرات متاحة دابا.", color = TextMuted)
+            }
+            else -> LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 165.dp),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                gridItems(videos, key = { it.youtubeVideoId }) { video ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().clickable { onPlay(video.youtubeVideoId) },
+                        color = Raised,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                    ) {
+                        Column {
+                            Box {
+                                AsyncImage(
+                                    model = video.thumbnailUrl.ifBlank { "https://img.youtube.com/vi/${video.youtubeVideoId}/hqdefault.jpg" },
+                                    contentDescription = video.title,
+                                    modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                Surface(
+                                    modifier = Modifier.align(Alignment.Center),
+                                    color = Color.Black.copy(alpha = 0.72f),
+                                    shape = CircleShape,
+                                ) {
+                                    Text("▶", color = GoldLight, modifier = Modifier.padding(horizontal = 15.dp, vertical = 9.dp), fontSize = 20.sp)
+                                }
+                            }
+                            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Text(video.title, color = TextMain, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(video.categories.joinToString(" · ").ifBlank { "Official trailer" }, color = GoldLight, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
