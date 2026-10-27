@@ -115,6 +115,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
@@ -3012,6 +3013,7 @@ private fun NumberPadDialog(
     )
 }
 
+@OptIn(UnstableApi::class)
 @Composable
 private fun PlaybackDialog(
     entry: MediaEntry,
