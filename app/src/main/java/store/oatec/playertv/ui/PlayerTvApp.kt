@@ -3016,6 +3016,7 @@ private fun NumberPadDialog(
     )
 }
 
+@androidx.media3.common.util.UnstableApi
 @Composable
 private fun PlaybackDialog(
     entry: MediaEntry,
