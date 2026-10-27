@@ -4,6 +4,7 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <application
+        android:banner="@drawable/oatec_launcher_icon"
         android:allowBackup="false"
         android:icon="@drawable/oatec_launcher_icon"
         android:roundIcon="@drawable/oatec_launcher_icon"
