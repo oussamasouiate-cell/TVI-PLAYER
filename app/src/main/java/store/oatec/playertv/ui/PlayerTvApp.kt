@@ -3110,6 +3110,7 @@ private fun PlaybackDialog(
         }
     }
     var mpvAttempt by remember(entry.id) { mutableStateOf(0) }
+    var controlsVisible by remember(entry.id) { mutableStateOf(true) }
     var mpvView by remember(entry.id, mpvAttempt) { mutableStateOf<MpvView?>(null) }
     val channelIndex = channels.indexOfFirst { it.id == entry.id }
     val latestEntry by rememberUpdatedState(entry)
@@ -3185,6 +3186,13 @@ private fun PlaybackDialog(
                     }
                 }
             }
+        }
+    }
+
+    LaunchedEffect(entry.id, activeEngine, controlsVisible) {
+        if (controlsVisible && entry.kind != MediaKind.LIVE) {
+            delay(3_500)
+            controlsVisible = false
         }
     }
 
@@ -3304,6 +3312,7 @@ private fun PlaybackDialog(
                         factory = { viewContext ->
                             MpvView(viewContext).apply {
                                 keepScreenOn = true
+                                setOnClickListener { controlsVisible = true }
                             }.also { mpvView = it }
                         },
                         modifier = Modifier.fillMaxSize(),
@@ -3315,8 +3324,16 @@ private fun PlaybackDialog(
                     factory = { viewContext ->
                         PlayerView(viewContext).apply {
                             this.player = player
-                            // Live TV is a clean picture-only screen; movie playback keeps its controls.
+                            // Native ExoPlayer controls auto-hide; custom overlays use the same timeout.
                             useController = entry.kind != MediaKind.LIVE
+                            controllerShowTimeoutMs = 3_500
+                            controllerAutoShow = entry.kind != MediaKind.LIVE
+                            setOnClickListener {
+                                if (entry.kind != MediaKind.LIVE) {
+                                    controlsVisible = true
+                                    showController()
+                                }
+                            }
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                             keepScreenOn = true
                         }
@@ -3326,7 +3343,7 @@ private fun PlaybackDialog(
                 )
             }
             // Live TV full-screen deliberately has no title badge, buttons, or other overlays.
-            if (entry.kind != MediaKind.LIVE) {
+            if (entry.kind != MediaKind.LIVE && controlsVisible) {
             Row(Modifier.align(Alignment.TopEnd).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (entry.kind != MediaKind.LIVE) {
                     if (activeEngine == "exoplayer") OutlinedButton(onClick = { showAudioDialog = true }) { Text("Audio tracks") }
@@ -3343,7 +3360,7 @@ private fun PlaybackDialog(
                 OutlinedButton(onClick = onDismiss) { Text("Close") }
             }
             }
-            if (entry.kind != MediaKind.LIVE && activeEngine == "mpv") {
+            if (entry.kind != MediaKind.LIVE && activeEngine == "mpv" && controlsVisible) {
                 Row(
                     modifier = Modifier.align(Alignment.BottomCenter).padding(start = 12.dp, end = 12.dp, bottom = 28.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
