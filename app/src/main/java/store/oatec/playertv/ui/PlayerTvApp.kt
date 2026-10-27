@@ -3217,7 +3217,13 @@ private fun PlaybackDialog(
                             subtitleLanguages = listOf("ar", "ara", "en", "eng", "fr", "fre"),
                             // Automatically discover adjacent external subtitle files where supported.
                             // Prefer hardware decoding where available for high-resolution HEVC streams.
-                            extra = mapOf("sub-auto" to "all", "hwdec" to if (mpvAttempt > 0) "no" else "auto-safe"),
+                            extra = mapOf(
+                                "sub-auto" to "all",
+                                // Use hardware decoding when safe, but automatically fall back to FFmpeg software decoding
+                                // when a codec/profile is unsupported by the device decoder.
+                                "hwdec" to if (mpvAttempt > 0) "no" else "auto-safe",
+                                "vd-lavc-software-fallback" to "yes",
+                            ),
                         ),
                     )
                 }
