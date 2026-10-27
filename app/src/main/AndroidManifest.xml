@@ -14,6 +14,7 @@
         android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
+            android:banner="@drawable/oatec_tv_banner"
             android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize"
             android:screenOrientation="landscape"
             android:exported="true">
