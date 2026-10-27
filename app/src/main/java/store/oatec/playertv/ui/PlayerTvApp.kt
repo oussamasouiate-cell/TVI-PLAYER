@@ -3013,7 +3013,7 @@ private fun NumberPadDialog(
     )
 }
 
-@OptIn(UnstableApi::class)
+@androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 @Composable
 private fun PlaybackDialog(
     entry: MediaEntry,
