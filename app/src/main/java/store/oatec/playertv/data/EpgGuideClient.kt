@@ -32,7 +32,9 @@ class EpgGuideClient(
         try {
             val status = connection.responseCode
             if (status !in 200..299) throw IOException("EPG server returned HTTP $status.")
-            val declaredLength = connection.contentLengthLong
+            // contentLength is available on the app's minSdk (23); the streamed byte
+            // counter below remains the authoritative limit when the length is unknown.
+            val declaredLength = connection.contentLength
             if (declaredLength > maxBytes) throw IOException("The EPG guide exceeds the size limit.")
             val bytes = connection.inputStream.use { input ->
                 val output = java.io.ByteArrayOutputStream(minOf(maxBytes, 64 * 1024))
