@@ -855,6 +855,7 @@ fun PlayerTvApp() {
                             onFavorite = { item -> preferences.setFavorite(item.id, item.id !in preferences.favorites()); preferenceRevision++ },
                             onOrganize = { organizingChannel = it },
                             onHide = { item -> preferences.setHidden(item.id, item.id !in preferences.hiddenChannels()); preferenceRevision++ },
+                            onDelete = { item -> preferences.setHidden(item.id, true); preferenceRevision++ },
                         )
                         Section.MOVIES -> MediaScreen(
                             title = "Movies",
@@ -2070,11 +2071,14 @@ private fun LiveScreen(
     onFavorite: (MediaEntry) -> Unit,
     onOrganize: (MediaEntry) -> Unit,
     onHide: (MediaEntry) -> Unit,
+    onDelete: (MediaEntry) -> Unit,
 ) {
     val channels = remember(catalog.liveChannels, category, search, preferenceRevision) {
         visibleChannels(catalog, category, search, preferences)
     }
     var selectedChannel by remember(channels) { mutableStateOf(channels.firstOrNull()) }
+    var previewRequested by remember(channels) { mutableStateOf(false) }
+    var pendingDeleteChannel by remember { mutableStateOf<MediaEntry?>(null) }
     val categories = remember(availableCategories, catalog.liveChannels, preferenceRevision) {
         (listOf("All", "Favorites", "Hidden") + AUTO_CHANNEL_CATEGORIES + availableCategories +
             catalog.liveChannels.map { preferences.categoryFor(it.id, automaticChannelCategory(it)) } +
@@ -2120,7 +2124,7 @@ private fun LiveScreen(
                             color = if (selected) Raised else Panel, shape = RoundedCornerShape(10.dp),
                             border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) Lime else Color.White.copy(alpha = 0.08f)),
                             modifier = Modifier.fillMaxWidth().height(86.dp).combinedClickable(
-                                onClick = { selectedChannel = item },
+                                onClick = { selectedChannel = item; previewRequested = true },
                                 onDoubleClick = { onPlay(item.copy(title = preferences.channelTitle(item.id, item.title))) },
                             ),
                         ) {
@@ -2132,6 +2136,13 @@ private fun LiveScreen(
                                 Column(Modifier.weight(1f)) {
                                     Text(channelNumber(item, catalog.liveChannels, preferences).toString().padStart(3, '0'), color = Lime, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                     Text(preferences.channelTitle(item.id, item.title), color = TextMain, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                }
+                                if (category != "Hidden") {
+                                    TextButton(
+                                        onClick = { pendingDeleteChannel = item },
+                                        modifier = Modifier.size(28.dp),
+                                        contentPadding = PaddingValues(0.dp),
+                                    ) { Text("×", color = ErrorRed, fontSize = 17.sp, fontWeight = FontWeight.Black) }
                                 }
                             }
                         }
@@ -2146,7 +2157,7 @@ private fun LiveScreen(
                     Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
                         val preview = selectedChannel
                         if (preview != null) {
-                            ChannelMiniPreview(entry = preview)
+                            ChannelMiniPreview(entry = preview, playing = previewRequested)
                         } else {
                             Text("TV", color = Lime, fontSize = 42.sp, fontWeight = FontWeight.Black)
                         }
@@ -2169,25 +2180,72 @@ private fun LiveScreen(
             if (epgStatus.isNotBlank()) Text(epgStatus, color = TextMuted, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
-}
-@Composable
-private fun ChannelMiniPreview(entry: MediaEntry) {
-    // Keep browsing lightweight: don't create a second ExoPlayer just for a silent preview.
-    // The full decoder is created only when the user explicitly starts playback.
-    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-        if (entry.logoUrl.isNotBlank()) {
-            AsyncImage(
-                model = entry.logoUrl,
-                contentDescription = entry.title,
-                modifier = Modifier.fillMaxSize().padding(12.dp),
-                contentScale = ContentScale.Fit,
-            )
-        } else {
-            Text(entry.title, color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
+    pendingDeleteChannel?.let { item ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteChannel = null },
+            title = { Text("Delete channel?") },
+            text = { Text("Remove “${preferences.channelTitle(item.id, item.title)}” from the main channel list? You can restore it later from Hidden.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete(item)
+                    pendingDeleteChannel = null
+                }) { Text("Delete", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteChannel = null }) { Text("Cancel") }
+            },
+        )
     }
 }
+@androidx.annotation.OptIn(markerClass = [UnstableApi::class])
+@Composable
+private fun ChannelMiniPreview(entry: MediaEntry, playing: Boolean) {
+    if (!playing) {
+        Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+            if (entry.logoUrl.isNotBlank()) {
+                AsyncImage(
+                    model = entry.logoUrl,
+                    contentDescription = entry.title,
+                    modifier = Modifier.fillMaxSize().padding(12.dp),
+                    contentScale = ContentScale.Fit,
+                )
+            } else {
+                Text(entry.title, color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        return
+    }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val player = remember(entry.id, entry.streamUrl) {
+        ExoPlayer.Builder(context).build().apply {
+            val audioAttributes = AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA)
+                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                .build()
+            setAudioAttributes(audioAttributes, true)
+            volume = 1f
+            setMediaItem(mediaItemForStream(entry.streamUrl))
+            playWhenReady = true
+            prepare()
+        }
+    }
+    DisposableEffect(player) {
+        onDispose { player.release() }
+    }
+    AndroidView(
+        modifier = Modifier.fillMaxSize(),
+        factory = { viewContext ->
+            PlayerView(viewContext).apply {
+                this.player = player
+                useController = false
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                keepScreenOn = true
+            }
+        },
+        update = { it.player = player },
+    )
+}
 @Composable
 private fun CategoryPill(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
@@ -3745,15 +3803,18 @@ private fun visibleChannels(
     search: String,
     preferences: PlayerPreferences,
 ): List<MediaEntry> = numberedChannels(catalog.liveChannels, preferences).map { it.first }.filter { channel ->
+    val advertisingChannel = channel.title.contains("####") ||
+        preferences.channelTitle(channel.id, channel.title).contains("####")
     val hidden = channel.id in preferences.hiddenChannels()
     val automaticCategory = automaticChannelCategory(channel)
     val effectiveCategory = preferences.categoryFor(channel.id, automaticCategory)
-    (when (category) {
-        "All" -> !hidden
-        "Favorites" -> !hidden && channel.id in preferences.favorites()
-        "Hidden" -> hidden
-        else -> !hidden && effectiveCategory.equals(category, ignoreCase = true)
-    }) &&
+    !advertisingChannel &&
+        (when (category) {
+            "All" -> !hidden
+            "Favorites" -> !hidden && channel.id in preferences.favorites()
+            "Hidden" -> hidden
+            else -> !hidden && effectiveCategory.equals(category, ignoreCase = true)
+        }) &&
         (search.isBlank() || channel.title.contains(search, true) || channel.category.contains(search, true))
 }
 
