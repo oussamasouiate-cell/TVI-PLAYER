@@ -50,6 +50,12 @@ jobs:
       - name: Run Android Lint
         run: gradle :app:lintDebug
 
+      - name: Print Android Lint report when available
+        if: always()
+        run: |
+          report=app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
+          if [ -f "$report" ]; then cat "$report"; else echo "Lint text report not found"; fi
+
       - name: Build release APKs
         run: gradle :app:assembleRelease
 
