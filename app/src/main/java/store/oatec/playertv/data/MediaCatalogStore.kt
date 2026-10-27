@@ -94,7 +94,7 @@ class MediaCatalogStore(context: Context) : SQLiteOpenHelper(
         fun insertBatch(entries: List<MediaEntry>) {
             check(!finished) { "Catalogue import is already closed." }
             if (entries.isEmpty()) return
-            entries.forEach { entry ->
+            for (entry in entries) {
                 val values = ContentValues().apply {
                     put("source_id", sourceId)
                     put("section", section)
@@ -136,7 +136,7 @@ class MediaCatalogStore(context: Context) : SQLiteOpenHelper(
     /** Replace a section atomically; call appendBatch repeatedly inside this transaction. */
     fun replaceSection(sourceId: String, section: String, batches: Sequence<List<MediaEntry>>) {
         beginImport(sourceId, section).use { session ->
-            batches.forEach(session::insertBatch)
+            for (batch in batches) session.insertBatch(batch)
             session.commit()
         }
     }
@@ -150,7 +150,7 @@ class MediaCatalogStore(context: Context) : SQLiteOpenHelper(
         val db = writableDatabase
         db.beginTransaction()
         try {
-            entries.forEach { entry ->
+            for (entry in entries) {
                 val values = ContentValues().apply {
                     put("source_id", sourceId)
                     put("section", section)
