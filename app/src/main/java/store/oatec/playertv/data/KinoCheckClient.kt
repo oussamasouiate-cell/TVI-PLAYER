@@ -68,6 +68,7 @@ class KinoCheckClient(
         val array = when (response) {
             is JSONArray -> response
             is JSONObject -> response.optJSONArray("videos")
+                ?: response.optJSONArray("trailers")
                 ?: response.optJSONArray("results")
                 ?: response.optJSONArray("items")
                 ?: response.optJSONArray("data")
@@ -80,14 +81,14 @@ class KinoCheckClient(
         val query = params.entries.joinToString("&") { (key, value) ->
             "${encode(key)}=${encode(value)}"
         }
-        val connection = (URL("https://api.kinocheck.com$path?$query").openConnection() as HttpURLConnection).apply {
+        val connection = (URL("https://api.kinocheck.de$path?$query").openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 10_000
             readTimeout = 12_000
             setRequestProperty("Accept", "application/json")
             if (apiKey.isNotBlank()) {
                 setRequestProperty("X-Api-Key", apiKey.trim())
-                setRequestProperty("X-Api-Host", "api.kinocheck.com")
+                setRequestProperty("X-Api-Host", "api.kinocheck.de")
             }
         }
         return try {
