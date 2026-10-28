@@ -273,7 +273,7 @@ private enum class Section(val label: String) {
     HOME("Home"), LIVE("Live TV"), MOVIES("Movies"), SERIES("Series"), TRAILERS("Trailers"), DOWNLOADS("Downloads"), SOURCES("Sources"), SETTINGS("Settings"),
 }
 
-@OptIn(androidx.media3.common.util.UnstableApi::class)
+@androidx.media3.common.util.UnstableApi
 @Composable
 fun PlayerTvApp() {
     val context = androidx.compose.ui.platform.LocalContext.current
