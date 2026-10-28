@@ -449,8 +449,27 @@ fun PlayerTvApp() {
                             // Stream bounded batches directly into one SQLite transaction.
                             // A failed response rolls back, preserving the last good catalogue.
                             val result = mediaCatalogStore.beginImport(source.id, catalogSection.name).use { session ->
+                                val previewItems = ArrayList<MediaEntry>(CATALOG_PAGE_SIZE)
+                                var previewPublished = false
                                 val loaded = repository.loadCatalogBatched(source, catalogSection) { batch ->
                                     session.insertBatch(batch)
+                                    if (!previewPublished && previewItems.size < CATALOG_PAGE_SIZE) {
+                                        previewItems.addAll(batch.take(CATALOG_PAGE_SIZE - previewItems.size))
+                                        if (previewItems.size >= CATALOG_PAGE_SIZE) {
+                                            previewPublished = true
+                                            val firstPagePreview = previewItems.toList()
+                                            scope.launch {
+                                                if (source.id == activeSourceId) {
+                                                    val previewCatalog = applyKidsModeFilter(firstPagePreview, preferences)
+                                                    catalog = when (catalogSection) {
+                                                        CatalogSection.LIVE -> catalog.copy(liveChannels = previewCatalog)
+                                                        CatalogSection.MOVIES -> catalog.copy(movies = previewCatalog)
+                                                        CatalogSection.SERIES -> catalog.copy(series = previewCatalog)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                     catalogLoadedItems += batch.size
                                     // Providers often do not expose a reliable total in advance.
                                     // Progress fills gradually, with the final 8% reserved for completion.
@@ -4003,7 +4022,7 @@ private fun searchYouTubeWeb(query: String, section: Section): List<MediaEntry> 
         val code = connection.responseCode
         if (code !in 200..299) throw IOException("YouTube search failed (HTTP $code).")
         val html = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-        val marker = Regex("""(?:var\\s+)?ytInitialData\\s*=\\s*""").find(html)
+        val marker = Regex("""(?:var\s+)?ytInitialData\s*=\s*""").find(html)
             ?: throw IOException("YouTube did not return search results.")
         val start = html.indexOf('{', marker.range.last + 1)
         if (start < 0) throw IOException("YouTube search response was incomplete.")
@@ -4015,7 +4034,7 @@ private fun searchYouTubeWeb(query: String, section: Section): List<MediaEntry> 
             val ch = html[i]
             if (inString) {
                 if (escaped) escaped = false
-                else if (ch == '\\\\') escaped = true
+                else if (ch == '\\') escaped = true
                 else if (ch == '"') inString = false
             } else {
                 when (ch) {
