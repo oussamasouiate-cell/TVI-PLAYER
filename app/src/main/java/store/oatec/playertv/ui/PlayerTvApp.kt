@@ -3979,10 +3979,115 @@ private fun KidsDashboard(
 }
 
 
+
+private fun normalizeYouTubeTitle(value: String): String =
+    value.lowercase().replace(Regex("[^\\p{L}\\p{N} ]"), " ").replace(Regex("\\s+"), " ").trim()
+
+/**
+ * Public YouTube results fallback used when a private YouTube Data API key is not
+ * configured. Parses the embedded initial JSON and only reads public metadata.
+ */
+private fun searchYouTubeWeb(query: String, section: Section): List<MediaEntry> {
+    require(section == Section.MOVIES || section == Section.SERIES) {
+        "YouTube search is only available in the Kids movies and series sections."
+    }
+    val encoded = java.net.URLEncoder.encode(query.trim(), "UTF-8")
+    val connection = (URL("https://www.youtube.com/results?search_query=$encoded&hl=ar&gl=MA").openConnection() as HttpURLConnection).apply {
+        requestMethod = "GET"
+        connectTimeout = 8000
+        readTimeout = 10000
+        setRequestProperty("Accept-Language", "ar,en-US;q=0.8,en;q=0.6")
+        setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/130.0.0.0 Mobile Safari/537.36")
+    }
+    return try {
+        val code = connection.responseCode
+        if (code !in 200..299) throw IOException("YouTube search failed (HTTP $code).")
+        val html = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        val marker = Regex("""(?:var\\s+)?ytInitialData\\s*=\\s*""").find(html)
+            ?: throw IOException("YouTube did not return search results.")
+        val start = html.indexOf('{', marker.range.last + 1)
+        if (start < 0) throw IOException("YouTube search response was incomplete.")
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var end = -1
+        for (i in start until html.length) {
+            val ch = html[i]
+            if (inString) {
+                if (escaped) escaped = false
+                else if (ch == '\\\\') escaped = true
+                else if (ch == '"') inString = false
+            } else {
+                when (ch) {
+                    '"' -> inString = true
+                    '{' -> depth++
+                    '}' -> { depth--; if (depth == 0) { end = i + 1; break } }
+                }
+            }
+        }
+        if (end <= start) throw IOException("Could not parse YouTube search results.")
+        val root = JSONObject(html.substring(start, end))
+        val renderers = mutableListOf<JSONObject>()
+        fun collect(value: Any?) {
+            when (value) {
+                is JSONObject -> {
+                    value.optJSONObject("videoRenderer")?.let { renderers += it }
+                    val iterator = value.keys()
+                    while (iterator.hasNext()) collect(value.opt(iterator.next()))
+                }
+                is JSONArray -> for (i in 0 until value.length()) collect(value.opt(i))
+            }
+        }
+        collect(root)
+        renderers.mapNotNull { video ->
+            val videoId = video.optString("videoId").trim()
+            val titleNode = video.optJSONObject("title")
+            val title = titleNode?.optJSONArray("runs")?.let { runs ->
+                (0 until runs.length()).mapNotNull { runs.optJSONObject(it)?.optString("text") }
+                    .joinToString("")
+            }.orEmpty().ifBlank { titleNode?.optString("simpleText").orEmpty() }
+            if (videoId.isBlank() || title.isBlank()) return@mapNotNull null
+            val thumbnails = video.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+            val thumbnail = thumbnails?.let { values ->
+                (values.length() - 1 downTo 0).firstNotNullOfOrNull { index ->
+                    values.optJSONObject(index)?.optString("url")?.takeIf { it.isNotBlank() }
+                }
+            }.orEmpty().substringBefore("&amp;")
+            val owner = video.optJSONObject("ownerText")?.optJSONArray("runs")
+                ?.optJSONObject(0)?.optString("text").orEmpty()
+            MediaEntry(
+                id = "youtube:$videoId",
+                title = title,
+                category = if (section == Section.SERIES) "YouTube Kids • مسلسل" else "YouTube Kids • فيلم وكرتون",
+                streamUrl = "https://www.youtube.com/watch?v=$videoId",
+                logoUrl = thumbnail.ifBlank { "https://i.ytimg.com/vi/$videoId/hqdefault.jpg" },
+                kind = if (section == Section.SERIES) MediaKind.SERIES else MediaKind.MOVIE,
+                description = "YouTube result • $owner",
+            )
+        }.distinctBy { it.id }.take(20)
+    } finally {
+        connection.disconnect()
+    }
+}
+
 private fun searchYouTubeTrailer(entry: MediaEntry): String? {
     val apiKey = BuildConfig.YOUTUBE_API_KEY.trim()
-    if (apiKey.isBlank()) throw IllegalStateException("YouTube API key is not configured.")
     val canonicalTitle = entry.title.trim().replace(Regex("\\s+"), " ")
+    if (apiKey.isBlank()) {
+        val yearHint = entry.year.ifBlank { entry.releaseDate.take(4) }.filter(Char::isDigit).take(4)
+        val query = listOf(canonicalTitle, yearHint, if (entry.kind == MediaKind.SERIES) "official series trailer" else "official movie trailer")
+            .filter { it.isNotBlank() }.joinToString(" ")
+        val titleTokens = normalizeYouTubeTitle(canonicalTitle).split(" ").filter { it.length > 2 }.toSet()
+        return searchYouTubeWeb(query, if (entry.kind == MediaKind.SERIES) Section.SERIES else Section.MOVIES)
+            .mapNotNull { candidate ->
+                val normalized = normalizeYouTubeTitle(candidate.title)
+                if (!normalized.contains("trailer") && !normalized.contains("teaser")) return@mapNotNull null
+                val tokens = normalized.split(" ").toSet()
+                val score = titleTokens.count { it in tokens }.toFloat() / titleTokens.size.coerceAtLeast(1)
+                if (score >= 0.5f) candidate.id.removePrefix("youtube:") to score else null
+            }
+            .maxByOrNull { it.second }?.first
+    }
     if (canonicalTitle.length < 2) return null
     val year = entry.year.ifBlank { entry.releaseDate.take(4) }.filter(Char::isDigit).take(4)
     val query = buildList {
@@ -4186,9 +4291,8 @@ private fun searchYouTubeKids(query: String, section: Section): List<MediaEntry>
         "YouTube search is only available in the Kids movies and series sections."
     }
     val apiKey = BuildConfig.YOUTUBE_API_KEY.trim()
-    if (apiKey.isBlank()) {
-        throw IllegalStateException("YouTube API key is not configured. Add YOUTUBE_API_KEY to your local Gradle properties.")
-    }
+    // Keep Kids search working in builds where no private YouTube Data API key is configured.
+    if (apiKey.isBlank()) return searchYouTubeWeb(query, section)
 
     val params = listOf(
         "part" to "snippet",
