@@ -34,8 +34,14 @@ jobs:
 
       - name: Build debug APK
         env:
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-        run: gradle :app:assembleDebug --no-daemon -PYOUTUBE_API_KEY="$YOUTUBE_API_KEY"
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY || vars.YOUTUBE_API_KEY }}
+        run: |
+          if [ -z "$YOUTUBE_API_KEY" ]; then
+            echo "::error::Configure YOUTUBE_API_KEY in GitHub Actions Secrets or Variables."
+            exit 1
+          fi
+          echo "::add-mask::$YOUTUBE_API_KEY"
+          gradle :app:assembleDebug --no-daemon -PYOUTUBE_API_KEY="$YOUTUBE_API_KEY"
 
       - name: Install, launch, and inspect app in Android Emulator
         uses: reactivecircus/android-emulator-runner@v2
