@@ -53,7 +53,7 @@ jobs:
           script: |
             set -eu
             APK="${{ github.workspace }}/app/build/outputs/apk/debug/app-x86_64-debug.apk"
-            test -f "$APK" || { echo "Expected x86_64 debug APK was not found. Available APKs:"; find "${{ github.workspace }}/app/build/outputs/apk" -maxdepth 4 -type f -name "*.apk" -print || true; exit 1; }
+            test -f "$APK" || { echo "::error::Expected x86_64 debug APK was not found."; find "${{ github.workspace }}/app/build/outputs/apk" -maxdepth 4 -type f -name "*.apk" -print || true; exit 1; }
             adb install -r "$APK"
             adb shell am force-stop store.oatec.playertv
             adb shell monkey -p store.oatec.playertv 1
@@ -62,6 +62,7 @@ jobs:
             if [ -z "$PID" ]; then
               echo "::error::TVI Player process exited after launch."
               adb logcat -d -s AndroidRuntime:E
+              adb exec-out screencap -p > emulator-screenshot.png || true
               exit 1
             fi
             adb logcat -d -s AndroidRuntime:E > android-runtime-errors.log
@@ -69,18 +70,11 @@ jobs:
               cat android-runtime-errors.log
               exit 1
             fi
-            # Capture the screen before UIAutomator: UIAutomator can fail to expose
-            # a root node on some Compose/emulator combinations even when the app is alive.
             adb exec-out screencap -p > emulator-screenshot.png
             test -s emulator-screenshot.png
-            if adb shell uiautomator dump /sdcard/window.xml; then
-              adb pull /sdcard/window.xml emulator-ui.xml || true
-            else
-              echo "UIAutomator dump unavailable; process and screenshot checks remain authoritative."
-            fi
-            if [ ! -s emulator-ui.xml ]; then
-              printf '%s\n' 'UIAutomator did not return a window hierarchy; see emulator-screenshot.png.' > emulator-ui.xml
-            fi
+            # UIAutomator is intentionally not required: Compose may expose no root node
+            # on some hosted emulator images even while the app is running normally.
+            printf '%s\n' "Launch passed: process $PID remained alive for 25 seconds; no AndroidRuntime fatal exception. Screenshot captured. UI hierarchy intentionally skipped." > emulator-ui.xml
             test -s android-runtime-errors.log
             test -s emulator-ui.xml
             test -s emulator-screenshot.png
