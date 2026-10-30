@@ -52,17 +52,38 @@ jobs:
           profile: pixel_2
           script: |
             set -eu
-            test -f "${{ github.workspace }}/app/build/outputs/apk/debug/app-x86_64-debug.apk" || { echo "Expected x86_64 debug APK was not found. Available APKs:"; find "${{ github.workspace }}/app/build/outputs/apk" -maxdepth 4 -type f -name "*.apk" -print || true; exit 1; }; adb install -r "${{ github.workspace }}/app/build/outputs/apk/debug/app-x86_64-debug.apk"
+            APK="${{ github.workspace }}/app/build/outputs/apk/debug/app-x86_64-debug.apk"
+            test -f "$APK" || { echo "Expected x86_64 debug APK was not found. Available APKs:"; find "${{ github.workspace }}/app/build/outputs/apk" -maxdepth 4 -type f -name "*.apk" -print || true; exit 1; }
+            adb install -r "$APK"
             adb shell am force-stop store.oatec.playertv
             adb shell monkey -p store.oatec.playertv 1
             sleep 25
-            adb shell pidof store.oatec.playertv
+            PID="$(adb shell pidof store.oatec.playertv | tr -d '\r' || true)"
+            if [ -z "$PID" ]; then
+              echo "::error::TVI Player process exited after launch."
+              adb logcat -d -s AndroidRuntime:E
+              exit 1
+            fi
             adb logcat -d -s AndroidRuntime:E > android-runtime-errors.log
-            grep -q "FATAL EXCEPTION" android-runtime-errors.log && { cat android-runtime-errors.log; exit 1; } || true
-            adb shell uiautomator dump /sdcard/window.xml
-            adb pull /sdcard/window.xml emulator-ui.xml
+            if grep -q "FATAL EXCEPTION" android-runtime-errors.log; then
+              cat android-runtime-errors.log
+              exit 1
+            fi
+            # Capture the screen before UIAutomator: UIAutomator can fail to expose
+            # a root node on some Compose/emulator combinations even when the app is alive.
             adb exec-out screencap -p > emulator-screenshot.png
-            test -s emulator-ui.xml && test -s emulator-screenshot.png
+            test -s emulator-screenshot.png
+            if adb shell uiautomator dump /sdcard/window.xml; then
+              adb pull /sdcard/window.xml emulator-ui.xml || true
+            else
+              echo "UIAutomator dump unavailable; process and screenshot checks remain authoritative."
+            fi
+            if [ ! -s emulator-ui.xml ]; then
+              printf '%s\n' 'UIAutomator did not return a window hierarchy; see emulator-screenshot.png.' > emulator-ui.xml
+            fi
+            test -s android-runtime-errors.log
+            test -s emulator-ui.xml
+            test -s emulator-screenshot.png
 
       - name: Upload emulator evidence
         if: always()
