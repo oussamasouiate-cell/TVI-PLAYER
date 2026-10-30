@@ -450,8 +450,22 @@ fun PlayerTvApp() {
                             // Stream bounded batches directly into one SQLite transaction.
                             // A failed response rolls back, preserving the last good catalogue.
                             val result = mediaCatalogStore.beginImport(source.id, catalogSection.name).use { session ->
+                                var firstBatchDisplayed = false
                                 val loaded = repository.loadCatalogBatched(source, catalogSection) { batch ->
                                     session.insertBatch(batch)
+                                    // Render the first batch immediately instead of waiting for the
+                                    // entire provider catalogue and SQLite import to finish.
+                                    if (!firstBatchDisplayed && batch.isNotEmpty() && source.id == activeSourceId) {
+                                        val firstPage = batch.take(CATALOG_PAGE_SIZE)
+                                        catalogPageOffsets = catalogPageOffsets + (loadKey to firstPage.size)
+                                        val visiblePage = applyKidsModeFilter(firstPage, preferences)
+                                        catalog = when (catalogSection) {
+                                            CatalogSection.LIVE -> catalog.copy(liveChannels = visiblePage)
+                                            CatalogSection.MOVIES -> catalog.copy(movies = visiblePage)
+                                            CatalogSection.SERIES -> catalog.copy(series = visiblePage)
+                                        }
+                                        firstBatchDisplayed = true
+                                    }
                                     catalogLoadedItems += batch.size
                                     // Providers often do not expose a reliable total in advance.
                                     // Progress fills gradually, with the final 8% reserved for completion.
@@ -460,7 +474,6 @@ fun PlayerTvApp() {
                                 }
                                 session.commit()
                                 catalogProgress = 1f
-                                kotlinx.coroutines.delay(450)
                                 loaded
                             }
                             val firstPage = mediaCatalogStore.page(source.id, catalogSection.name, limit = CATALOG_PAGE_SIZE, offset = 0)
