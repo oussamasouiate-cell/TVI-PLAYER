@@ -168,7 +168,7 @@ private val TextMain = Color(0xFFF7F7F5)
 private val TextMuted = Color(0xFF9DA5B1)
 private val ErrorRed = Color(0xFFFF8177)
 private const val CHANNEL_INFO_DURATION_MS = 5_000L
-private const val CATALOG_PAGE_SIZE = 500
+private const val CATALOG_PAGE_SIZE = 100
 private const val PLAYER_API_BASE_URL = "https://admin.oatec.store/api/player"
 
 private fun activateOatecCode(context: Context, code: String): PlayerSource {
