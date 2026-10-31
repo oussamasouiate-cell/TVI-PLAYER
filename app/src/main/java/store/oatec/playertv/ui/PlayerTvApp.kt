@@ -2308,6 +2308,30 @@ private fun MediaScreen(
             entry.genre.split(",", "|", "/", "·").any { it.trim().equals(selectedShelf, true) } ||
             entry.title.contains(selectedShelf, true)
     }
+    val configuration = LocalConfiguration.current
+    val screenWidthDp = configuration.screenWidthDp
+    val isTelevision = (configuration.uiMode and Configuration.UI_MODE_TYPE_MASK) == Configuration.UI_MODE_TYPE_TELEVISION
+    val isWideScreen = isTelevision || screenWidthDp >= 900
+    val horizontalInset = when {
+        screenWidthDp >= 1600 -> 48.dp
+        screenWidthDp >= 1000 -> 32.dp
+        screenWidthDp >= 600 -> 24.dp
+        else -> 14.dp
+    }
+    val posterWidth = when {
+        isTelevision && screenWidthDp >= 1600 -> 220
+        isTelevision -> 190
+        screenWidthDp >= 1200 -> 184
+        screenWidthDp >= 900 -> 166
+        screenWidthDp >= 600 -> 148
+        screenWidthDp <= 360 -> 112
+        else -> 126
+    }
+    val headingFontSize = when {
+        screenWidthDp >= 1200 -> 26.sp
+        screenWidthDp >= 600 -> 23.sp
+        else -> 20.sp
+    }
     val listState = rememberLazyListState()
     val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
     LaunchedEffect(lastVisible, entries.size, selectedShelf, search, title) {
@@ -2335,7 +2359,7 @@ private fun MediaScreen(
             grouped.entries.map { it.key to it.value }
         }
     }
-    Column(Modifier.fillMaxSize().background(Color(0xFF09090B)).padding(horizontal = 18.dp, vertical = 12.dp)) {
+    Column(Modifier.fillMaxSize().background(Color(0xFF09090B)).padding(horizontal = horizontalInset, vertical = if (isWideScreen) 20.dp else 10.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(onClick = onHome, modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 76.dp).onPreviewKeyEvent { event ->
                     val key = event.nativeKeyEvent
@@ -2345,10 +2369,15 @@ private fun MediaScreen(
                     } else false
                 }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) { Text("← Back", fontSize = 11.sp) }
             Column(Modifier.weight(1f)) {
-                Text(if (isMovies) "FILMS" else title.uppercase(), color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.Black)
-                Text("${filtered.size} titles · Discover your next favourite", color = TextMuted, fontSize = 11.sp)
+                Text(if (isMovies) "FILMS" else title.uppercase(), color = TextMain, fontSize = headingFontSize, fontWeight = FontWeight.Black)
+                Text("${filtered.size} titles · Discover your next favourite", color = TextMuted, fontSize = if (isWideScreen) 13.sp else 11.sp)
             }
-            SearchField(search, onSearch, Modifier.width(190.dp))
+            SearchField(search, onSearch, Modifier.width(when {
+                screenWidthDp >= 1200 -> 300.dp
+                screenWidthDp >= 800 -> 240.dp
+                screenWidthDp >= 600 -> 210.dp
+                else -> 145.dp
+            }))
         }
         if (message.isNotBlank()) Text(message, color = TextMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (shelves.size > 1) {
@@ -2378,7 +2407,10 @@ private fun MediaScreen(
                 if (selectedShelf == "All" && search.isBlank()) {
                     val featured = filtered.firstOrNull { it.logoUrl.isNotBlank() } ?: filtered.first()
                     item(key = "featured-title") {
-                        Box(Modifier.fillMaxWidth().heightIn(min = 170.dp, max = 245.dp)) {
+                        Box(Modifier.fillMaxWidth().heightIn(
+                            min = if (isWideScreen) 250.dp else 170.dp,
+                            max = if (screenWidthDp >= 1200) 380.dp else if (isWideScreen) 320.dp else 245.dp,
+                        )) {
                             Surface(
                                 modifier = Modifier.fillMaxSize().clickable { onPlay(featured) },
                                 shape = RoundedCornerShape(18.dp),
@@ -2398,8 +2430,8 @@ private fun MediaScreen(
                                         Modifier.align(Alignment.BottomStart).fillMaxWidth(0.8f).padding(18.dp),
                                         verticalArrangement = Arrangement.spacedBy(6.dp),
                                     ) {
-                                        Text(if (isMovies) "FEATURED MOVIE" else "FEATURED SERIES", color = accent, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.4.sp)
-                                        Text(featured.title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        Text(if (isMovies) "FEATURED MOVIE" else "FEATURED SERIES", color = accent, fontSize = if (isWideScreen) 12.sp else 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.4.sp)
+                                        Text(featured.title, color = Color.White, fontSize = if (screenWidthDp >= 1200) 32.sp else if (isWideScreen) 27.sp else 22.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                         Text(listOf(featured.year, featured.genre, featured.rating.takeIf { it.isNotBlank() }?.let { "★ $it" }.orEmpty()).filter { it.isNotBlank() }.joinToString(" · "),
                                             color = Color.LightGray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         Button(onClick = { onPlay(featured) }, colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)) {
@@ -2414,12 +2446,12 @@ private fun MediaScreen(
                 rowShelves.forEachIndexed { index, (rowTitle, rowEntries) ->
                     if (rowEntries.isNotEmpty()) {
                         item(key = "shelf-heading:$index:$rowTitle") {
-                            Text(rowTitle, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+                            Text(rowTitle, color = Color.White, fontSize = if (screenWidthDp >= 1200) 23.sp else if (isWideScreen) 20.sp else 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
                         }
                         item(key = "shelf-row:$index:$rowTitle") {
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(end = 12.dp)) {
                                 items(rowEntries.distinctBy { it.id }, key = { "poster:${rowTitle}:${it.id}" }) { entry ->
-                                    PosterCard(entry = entry, favorite = entry.id in preferences.favorites(), onClick = { onPlay(entry) }, onFavorite = { onFavorite(entry) }, accent = accent, progressFraction = preferences.watchProgressFraction(entry.id))
+                                    PosterCard(entry = entry, favorite = entry.id in preferences.favorites(), onClick = { onPlay(entry) }, onFavorite = { onFavorite(entry) }, accent = accent, progressFraction = preferences.watchProgressFraction(entry.id), posterWidth = posterWidth, isWideScreen = isWideScreen)
                                 }
                             }
                         }
@@ -2483,9 +2515,18 @@ private fun sameChannelIdentity(first: MediaEntry, second: MediaEntry): Boolean 
 }
 
 @Composable
-private fun PosterCard(entry: MediaEntry, favorite: Boolean, onClick: () -> Unit, onFavorite: () -> Unit, accent: Color = Lime, progressFraction: Float = 0f) {
+private fun PosterCard(
+    entry: MediaEntry,
+    favorite: Boolean,
+    onClick: () -> Unit,
+    onFavorite: () -> Unit,
+    accent: Color = Lime,
+    progressFraction: Float = 0f,
+    posterWidth: Int = 142,
+    isWideScreen: Boolean = false,
+) {
     var focused by remember { mutableStateOf(false) }
-    Column(Modifier.width(142.dp)) {
+    Column(Modifier.width(posterWidth.dp)) {
         Box(
             Modifier.fillMaxWidth().aspectRatio(0.68f).onFocusChanged { focused = it.isFocused }.focusable().clickable(onClick = onClick),
         ) {
@@ -2522,9 +2563,9 @@ private fun PosterCard(entry: MediaEntry, favorite: Boolean, onClick: () -> Unit
                 )
             }
         }
-        Text(entry.title, color = TextMain, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+        Text(entry.title, color = TextMain, fontSize = if (isWideScreen) 14.sp else 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
         val subtitle = listOf(entry.year, entry.genre.ifBlank { entry.category }).firstOrNull { it.isNotBlank() }
-        if (subtitle != null) Text(subtitle, color = TextMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (subtitle != null) Text(subtitle, color = TextMuted, fontSize = if (isWideScreen) 11.sp else 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
