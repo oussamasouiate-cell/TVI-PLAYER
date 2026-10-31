@@ -168,7 +168,7 @@ private val TextMain = Color(0xFFF7F7F5)
 private val TextMuted = Color(0xFF9DA5B1)
 private val ErrorRed = Color(0xFFFF8177)
 private const val CHANNEL_INFO_DURATION_MS = 5_000L
-private const val CATALOG_PAGE_SIZE = 500
+private const val CATALOG_PAGE_SIZE = 100
 private const val PLAYER_API_BASE_URL = "https://admin.oatec.store/api/player"
 
 private fun activateOatecCode(context: Context, code: String): PlayerSource {
@@ -450,8 +450,22 @@ fun PlayerTvApp() {
                             // Stream bounded batches directly into one SQLite transaction.
                             // A failed response rolls back, preserving the last good catalogue.
                             val result = mediaCatalogStore.beginImport(source.id, catalogSection.name).use { session ->
+                                var firstBatchDisplayed = false
                                 val loaded = repository.loadCatalogBatched(source, catalogSection) { batch ->
                                     session.insertBatch(batch)
+                                    // Render the first batch immediately instead of waiting for the
+                                    // entire provider catalogue and SQLite import to finish.
+                                    if (!firstBatchDisplayed && batch.isNotEmpty() && source.id == activeSourceId) {
+                                        val firstPage = batch.take(CATALOG_PAGE_SIZE)
+                                        catalogPageOffsets = catalogPageOffsets + (loadKey to firstPage.size)
+                                        val visiblePage = applyKidsModeFilter(firstPage, preferences)
+                                        catalog = when (catalogSection) {
+                                            CatalogSection.LIVE -> catalog.copy(liveChannels = visiblePage)
+                                            CatalogSection.MOVIES -> catalog.copy(movies = visiblePage)
+                                            CatalogSection.SERIES -> catalog.copy(series = visiblePage)
+                                        }
+                                        firstBatchDisplayed = true
+                                    }
                                     catalogLoadedItems += batch.size
                                     // Providers often do not expose a reliable total in advance.
                                     // Progress fills gradually, with the final 8% reserved for completion.
@@ -460,7 +474,6 @@ fun PlayerTvApp() {
                                 }
                                 session.commit()
                                 catalogProgress = 1f
-                                kotlinx.coroutines.delay(450)
                                 loaded
                             }
                             val firstPage = mediaCatalogStore.page(source.id, catalogSection.name, limit = CATALOG_PAGE_SIZE, offset = 0)
@@ -2094,94 +2107,92 @@ private fun LiveScreen(
     LaunchedEffect(lastVisible, channels.size) {
         if (channels.isNotEmpty() && lastVisible >= channels.size - 10) onLoadMore()
     }
-    Row(Modifier.fillMaxSize().background(Ink)) {
-        Column(Modifier.weight(1.6f).fillMaxHeight().padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("LIVE TV", color = Lime, fontSize = 18.sp, fontWeight = FontWeight.Black)
-                Spacer(Modifier.weight(1f))
-                OutlinedButton(onClick = onHome, modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 76.dp).onPreviewKeyEvent { event ->
-                    val key = event.nativeKeyEvent
-                    if (key.action == AndroidKeyEvent.ACTION_DOWN && key.keyCode in setOf(AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_NUMPAD_ENTER, AndroidKeyEvent.KEYCODE_SPACE)) {
-                        onHome()
-                        true
-                    } else false
-                }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) { Text("← Back", fontSize = 11.sp) }
-            }
+    val configuration = LocalConfiguration.current
+    val screenWidthDp = configuration.screenWidthDp
+    val isWideScreen = (configuration.uiMode and Configuration.UI_MODE_TYPE_MASK) == Configuration.UI_MODE_TYPE_TELEVISION || screenWidthDp >= 800
+    var channelDialogOpen by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize().background(Ink).padding(horizontal = when { screenWidthDp >= 1400 -> 32.dp; screenWidthDp >= 700 -> 20.dp; else -> 8.dp }, vertical = 3.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onHome, modifier = Modifier.heightIn(min = 36.dp).widthIn(min = 72.dp).onPreviewKeyEvent { event ->
+                val key = event.nativeKeyEvent
+                if (key.action == AndroidKeyEvent.ACTION_DOWN && key.keyCode in setOf(AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_NUMPAD_ENTER, AndroidKeyEvent.KEYCODE_SPACE)) {
+                    onHome()
+                    true
+                } else false
+            }, contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp)) { Text("← الرئيسية", fontSize = 10.sp) }
+            Spacer(Modifier.weight(1f))
             OutlinedTextField(
-                value = search, onValueChange = onSearch, modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp),
-                singleLine = true, placeholder = { Text("Search channels…", color = TextMuted) },
+                value = search, onValueChange = onSearch, modifier = Modifier.width(when { screenWidthDp >= 1200 -> 300.dp; screenWidthDp >= 700 -> 230.dp; else -> 145.dp }).heightIn(max = 54.dp),
+                singleLine = true, placeholder = { Text("بحث فالقنوات…", color = TextMuted, fontSize = 12.sp) },
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = TextMain), shape = RoundedCornerShape(10.dp),
             )
-            LazyRow(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(categories, key = { it }) { item -> CategoryPill(item, category == item) { onCategory(item) } }
-            }
-            when {
-                busy && catalog.liveChannels.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingState("Loading channels", catalogProgress, catalogLoadedItems) }
-                channels.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { EmptyState("No channels available", message.ifBlank { "Add or refresh an IPTV source to load channels." }) }
-                else -> LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 130.dp), state = listState, modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp),
-                ) {
-                    gridItems(channels, key = { it.id }) { item ->
-                        val selected = selectedChannel?.id == item.id
-                        Surface(
-                            color = if (selected) Raised else Panel, shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) Lime else Color.White.copy(alpha = 0.08f)),
-                            modifier = Modifier.fillMaxWidth().height(86.dp).combinedClickable(
-                                onClick = { selectedChannel = item; previewRequested = true },
-                                onDoubleClick = { onPlay(item.copy(title = preferences.channelTitle(item.id, item.title))) },
-                            ),
-                        ) {
-                            Row(Modifier.padding(7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                Box(Modifier.size(40.dp).background(Color.Black, RoundedCornerShape(7.dp)), contentAlignment = Alignment.Center) {
-                                    if (item.logoUrl.isNotBlank()) AsyncImage(item.logoUrl, contentDescription = item.title, modifier = Modifier.fillMaxSize().padding(2.dp))
-                                    else Text(channelNumber(item, catalog.liveChannels, preferences).toString(), color = Lime, fontSize = 12.sp, fontWeight = FontWeight.Black)
-                                }
-                                Column(Modifier.weight(1f)) {
-                                    Text(channelNumber(item, catalog.liveChannels, preferences).toString().padStart(3, '0'), color = Lime, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    Text(preferences.channelTitle(item.id, item.title), color = TextMain, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                }
-                                if (category != "Hidden") {
-                                    TextButton(
-                                        onClick = { pendingDeleteChannel = item },
-                                        modifier = Modifier.size(28.dp),
-                                        contentPadding = PaddingValues(0.dp),
-                                    ) { Text("×", color = ErrorRed, fontSize = 17.sp, fontWeight = FontWeight.Black) }
-                                }
+        }
+        LazyRow(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 3.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(categories, key = { it }) { item -> CategoryPill(item, category == item) { onCategory(item) } }
+        }
+        when {
+            busy && catalog.liveChannels.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingState("Loading channels", catalogProgress, catalogLoadedItems) }
+            channels.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { EmptyState("No channels available", message.ifBlank { "Add or refresh an IPTV source to load channels." }) }
+            else -> LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = when { screenWidthDp >= 1500 -> 230.dp; screenWidthDp >= 1000 -> 190.dp; screenWidthDp >= 700 -> 155.dp; screenWidthDp <= 360 -> 118.dp; else -> 132.dp }),
+                state = listState, modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 3.dp, bottom = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (isWideScreen) 10.dp else 6.dp),
+                verticalArrangement = Arrangement.spacedBy(if (isWideScreen) 10.dp else 6.dp),
+            ) {
+                gridItems(channels, key = { it.id }) { item ->
+                    val selected = selectedChannel?.id == item.id
+                    Surface(
+                        color = if (selected) Raised else Panel, shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) Lime else Color.White.copy(alpha = 0.08f)),
+                        modifier = Modifier.fillMaxWidth().height(if (isWideScreen) 104.dp else 78.dp).combinedClickable(
+                            onClick = { selectedChannel = item; previewRequested = false; channelDialogOpen = true },
+                            onDoubleClick = { onPlay(item.copy(title = preferences.channelTitle(item.id, item.title))) },
+                        ),
+                    ) {
+                        Row(Modifier.padding(if (isWideScreen) 10.dp else 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Box(Modifier.size(if (isWideScreen) 52.dp else 38.dp).background(Color.Black, RoundedCornerShape(7.dp)), contentAlignment = Alignment.Center) {
+                                if (item.logoUrl.isNotBlank()) AsyncImage(model = item.logoUrl, contentDescription = item.title, modifier = Modifier.fillMaxSize().padding(2.dp), contentScale = ContentScale.Fit)
+                                else Text(channelNumber(item, catalog.liveChannels, preferences).toString(), color = Lime, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(channelNumber(item, catalog.liveChannels, preferences).toString().padStart(3, '0'), color = Lime, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text(preferences.channelTitle(item.id, item.title), color = TextMain, fontSize = if (isWideScreen) 13.sp else 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                            TextButton(onClick = { onFavorite(item) }, modifier = Modifier.size(28.dp), contentPadding = PaddingValues(0.dp)) {
+                                Text(if (item.id in preferences.favorites()) "★" else "☆", color = Lime, fontSize = 16.sp)
                             }
                         }
                     }
                 }
             }
         }
-        Column(Modifier.weight(1f).fillMaxHeight().padding(start = 8.dp, end = 14.dp, top = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("CHANNEL PREVIEW", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-            Surface(Modifier.fillMaxWidth().weight(1f), color = Panel, shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Lime.copy(alpha = 0.35f))) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-                        val preview = selectedChannel
-                        if (preview != null) {
-                            ChannelMiniPreview(entry = preview, playing = previewRequested)
-                        } else {
-                            Text("TV", color = Lime, fontSize = 42.sp, fontWeight = FontWeight.Black)
-                        }
+    }
+    if (channelDialogOpen && selectedChannel != null) {
+        val item = selectedChannel!!
+        Dialog(onDismissRequest = { channelDialogOpen = false }) {
+            Surface(color = Panel, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().widthIn(max = 620.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(preferences.channelTitle(item.id, item.title), color = TextMain, fontSize = if (isWideScreen) 22.sp else 18.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Box(Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 300.dp).background(Color.Black, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+                        ChannelMiniPreview(entry = item, playing = previewRequested)
                     }
-                    Text(selectedChannel?.let { preferences.channelTitle(it.id, it.title) } ?: "Select a channel", color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 2)
-                    selectedChannel?.let { item ->
-                        Text("CH " + channelNumber(item, catalog.liveChannels, preferences).toString().padStart(3, '0') + " • " + preferences.categoryFor(item.id, item.category), color = TextMuted, fontSize = 10.sp)
-                        val current = EpgRepository.currentProgram(epgPrograms, item.epgChannelId, epgClock)
-                        val next = EpgRepository.nextProgram(epgPrograms, item.epgChannelId, epgClock)
-                        Text(current?.title?.let { "NOW  " + it } ?: next?.title?.let { "NEXT  " + it } ?: "Programme information unavailable", color = GoldLight, fontSize = 11.sp, maxLines = 2)
-                        Button(onClick = { onPlay(item.copy(title = preferences.channelTitle(item.id, item.title))) }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Ink)) { Text("Watch full screen") }
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            TextButton(onClick = { onFavorite(item) }) { Text(if (item.id in preferences.favorites()) "★ Saved" else "☆ Favorite", color = Lime) }
-                            TextButton(onClick = { onOrganize(item) }) { Text("Edit", color = TextMuted) }
-                            TextButton(onClick = { onHide(item) }) { Text(if (item.id in preferences.hiddenChannels()) "Restore" else "Hide", color = TextMuted) }
-                        }
+                    val current = EpgRepository.currentProgram(epgPrograms, item.epgChannelId, epgClock)
+                    val next = EpgRepository.nextProgram(epgPrograms, item.epgChannelId, epgClock)
+                    Text(current?.title?.let { "NOW  $it" } ?: next?.title?.let { "NEXT  $it" } ?: "Programme information unavailable", color = GoldLight, fontSize = 12.sp, maxLines = 2)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(onClick = { onPlay(item.copy(title = preferences.channelTitle(item.id, item.title))); channelDialogOpen = false }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Ink)) { Text("مشاهدة") }
+                        OutlinedButton(onClick = { previewRequested = !previewRequested }, modifier = Modifier.weight(1f)) { Text(if (previewRequested) "إيقاف المعاينة" else "معاينة") }
                     }
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = { onFavorite(item) }) { Text(if (item.id in preferences.favorites()) "★ محفوظة" else "☆ المفضلة", color = Lime) }
+                        TextButton(onClick = { onOrganize(item); channelDialogOpen = false }) { Text("تنظيم", color = TextMuted) }
+                        TextButton(onClick = { onHide(item); channelDialogOpen = false }) { Text(if (item.id in preferences.hiddenChannels()) "إظهار" else "إخفاء", color = TextMuted) }
+                        TextButton(onClick = { pendingDeleteChannel = item; channelDialogOpen = false }) { Text("حذف", color = ErrorRed) }
+                    }
+                    TextButton(onClick = { channelDialogOpen = false }, modifier = Modifier.align(Alignment.End)) { Text("إغلاق") }
                 }
             }
-            if (epgStatus.isNotBlank()) Text(epgStatus, color = TextMuted, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
     pendingDeleteChannel?.let { item ->
@@ -2295,6 +2306,30 @@ private fun MediaScreen(
             entry.genre.split(",", "|", "/", "·").any { it.trim().equals(selectedShelf, true) } ||
             entry.title.contains(selectedShelf, true)
     }
+    val configuration = LocalConfiguration.current
+    val screenWidthDp = configuration.screenWidthDp
+    val isTelevision = (configuration.uiMode and Configuration.UI_MODE_TYPE_MASK) == Configuration.UI_MODE_TYPE_TELEVISION
+    val isWideScreen = isTelevision || screenWidthDp >= 900
+    val horizontalInset = when {
+        screenWidthDp >= 1600 -> 48.dp
+        screenWidthDp >= 1000 -> 32.dp
+        screenWidthDp >= 600 -> 24.dp
+        else -> 14.dp
+    }
+    val posterWidth = when {
+        isTelevision && screenWidthDp >= 1600 -> 220
+        isTelevision -> 190
+        screenWidthDp >= 1200 -> 184
+        screenWidthDp >= 900 -> 166
+        screenWidthDp >= 600 -> 148
+        screenWidthDp <= 360 -> 112
+        else -> 126
+    }
+    val headingFontSize = when {
+        screenWidthDp >= 1200 -> 26.sp
+        screenWidthDp >= 600 -> 23.sp
+        else -> 20.sp
+    }
     val listState = rememberLazyListState()
     val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
     LaunchedEffect(lastVisible, entries.size, selectedShelf, search, title) {
@@ -2322,22 +2357,24 @@ private fun MediaScreen(
             grouped.entries.map { it.key to it.value }
         }
     }
-    Column(Modifier.fillMaxSize().background(Color(0xFF09090B)).padding(horizontal = 18.dp, vertical = 12.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onHome, modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 76.dp).onPreviewKeyEvent { event ->
+    Column(Modifier.fillMaxSize().background(Color(0xFF09090B)).padding(horizontal = horizontalInset, vertical = if (isWideScreen) 8.dp else 3.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onHome, modifier = Modifier.heightIn(min = 36.dp).widthIn(min = 72.dp).onPreviewKeyEvent { event ->
                     val key = event.nativeKeyEvent
                     if (key.action == AndroidKeyEvent.ACTION_DOWN && key.keyCode in setOf(AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_NUMPAD_ENTER, AndroidKeyEvent.KEYCODE_SPACE)) {
                         onHome()
                         true
                     } else false
-                }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) { Text("← Back", fontSize = 11.sp) }
-            Column(Modifier.weight(1f)) {
-                Text(if (isMovies) "FILMS" else title.uppercase(), color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.Black)
-                Text("${filtered.size} titles · Discover your next favourite", color = TextMuted, fontSize = 11.sp)
-            }
-            SearchField(search, onSearch, Modifier.width(190.dp))
+                }, contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp)) { Text("← الرئيسية", fontSize = 10.sp) }
+            Spacer(Modifier.weight(1f))
+            SearchField(search, onSearch, Modifier.width(when {
+                screenWidthDp >= 1200 -> 280.dp
+                screenWidthDp >= 800 -> 220.dp
+                screenWidthDp >= 600 -> 185.dp
+                else -> 132.dp
+            }))
         }
-        if (message.isNotBlank()) Text(message, color = TextMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (message.isNotBlank()) Text(message, color = TextMuted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (shelves.size > 1) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 10.dp)) {
                 items(shelves, key = { "shelf:$it" }) { shelf ->
@@ -2362,51 +2399,15 @@ private fun MediaScreen(
                 contentPadding = PaddingValues(bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                if (selectedShelf == "All" && search.isBlank()) {
-                    val featured = filtered.firstOrNull { it.logoUrl.isNotBlank() } ?: filtered.first()
-                    item(key = "featured-title") {
-                        Box(Modifier.fillMaxWidth().heightIn(min = 170.dp, max = 245.dp)) {
-                            Surface(
-                                modifier = Modifier.fillMaxSize().clickable { onPlay(featured) },
-                                shape = RoundedCornerShape(18.dp),
-                                color = Color(0xFF202027),
-                            ) {
-                                Box {
-                                    if (featured.logoUrl.isNotBlank()) AsyncImage(
-                                        model = featured.logoUrl,
-                                        contentDescription = featured.title,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop,
-                                    )
-                                    Box(Modifier.fillMaxSize().background(
-                                        Brush.horizontalGradient(listOf(Color(0xEE09090B), Color(0x9909090B), Color.Transparent))
-                                    ))
-                                    Column(
-                                        Modifier.align(Alignment.BottomStart).fillMaxWidth(0.8f).padding(18.dp),
-                                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                                    ) {
-                                        Text(if (isMovies) "FEATURED MOVIE" else "FEATURED SERIES", color = accent, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.4.sp)
-                                        Text(featured.title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                        Text(listOf(featured.year, featured.genre, featured.rating.takeIf { it.isNotBlank() }?.let { "★ $it" }.orEmpty()).filter { it.isNotBlank() }.joinToString(" · "),
-                                            color = Color.LightGray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Button(onClick = { onPlay(featured) }, colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)) {
-                                            Text("▶  Watch now", fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
                 rowShelves.forEachIndexed { index, (rowTitle, rowEntries) ->
                     if (rowEntries.isNotEmpty()) {
                         item(key = "shelf-heading:$index:$rowTitle") {
-                            Text(rowTitle, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+                            Text(rowTitle, color = Color.White, fontSize = if (screenWidthDp >= 1200) 23.sp else if (isWideScreen) 20.sp else 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
                         }
                         item(key = "shelf-row:$index:$rowTitle") {
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(end = 12.dp)) {
                                 items(rowEntries.distinctBy { it.id }, key = { "poster:${rowTitle}:${it.id}" }) { entry ->
-                                    PosterCard(entry = entry, favorite = entry.id in preferences.favorites(), onClick = { onPlay(entry) }, onFavorite = { onFavorite(entry) }, accent = accent, progressFraction = preferences.watchProgressFraction(entry.id))
+                                    PosterCard(entry = entry, favorite = entry.id in preferences.favorites(), onClick = { onPlay(entry) }, onFavorite = { onFavorite(entry) }, accent = accent, progressFraction = preferences.watchProgressFraction(entry.id), posterWidth = posterWidth, isWideScreen = isWideScreen)
                                 }
                             }
                         }
@@ -2470,9 +2471,18 @@ private fun sameChannelIdentity(first: MediaEntry, second: MediaEntry): Boolean 
 }
 
 @Composable
-private fun PosterCard(entry: MediaEntry, favorite: Boolean, onClick: () -> Unit, onFavorite: () -> Unit, accent: Color = Lime, progressFraction: Float = 0f) {
+private fun PosterCard(
+    entry: MediaEntry,
+    favorite: Boolean,
+    onClick: () -> Unit,
+    onFavorite: () -> Unit,
+    accent: Color = Lime,
+    progressFraction: Float = 0f,
+    posterWidth: Int = 142,
+    isWideScreen: Boolean = false,
+) {
     var focused by remember { mutableStateOf(false) }
-    Column(Modifier.width(142.dp)) {
+    Column(Modifier.width(posterWidth.dp)) {
         Box(
             Modifier.fillMaxWidth().aspectRatio(0.68f).onFocusChanged { focused = it.isFocused }.focusable().clickable(onClick = onClick),
         ) {
@@ -2509,9 +2519,9 @@ private fun PosterCard(entry: MediaEntry, favorite: Boolean, onClick: () -> Unit
                 )
             }
         }
-        Text(entry.title, color = TextMain, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+        Text(entry.title, color = TextMain, fontSize = if (isWideScreen) 14.sp else 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
         val subtitle = listOf(entry.year, entry.genre.ifBlank { entry.category }).firstOrNull { it.isNotBlank() }
-        if (subtitle != null) Text(subtitle, color = TextMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (subtitle != null) Text(subtitle, color = TextMuted, fontSize = if (isWideScreen) 11.sp else 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -2800,22 +2810,23 @@ private fun SeriesScreen(
             lastVisible >= gridState.layoutInfo.totalItemsCount - 6
         ) onLoadMore()
     }
-    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onHome, modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 76.dp).onPreviewKeyEvent { event ->
+    val configuration = LocalConfiguration.current
+    val screenWidthDp = configuration.screenWidthDp
+    val isWideScreen = (configuration.uiMode and Configuration.UI_MODE_TYPE_MASK) == Configuration.UI_MODE_TYPE_TELEVISION || screenWidthDp >= 800
+    var detailsOpen by remember(selectedSeries?.id) { mutableStateOf(selectedSeries != null) }
+    Column(Modifier.fillMaxSize().background(Ink).padding(horizontal = when { screenWidthDp >= 1400 -> 36.dp; screenWidthDp >= 700 -> 22.dp; else -> 10.dp }, vertical = 3.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onHome, modifier = Modifier.heightIn(min = 36.dp).widthIn(min = 72.dp).onPreviewKeyEvent { event ->
                     val key = event.nativeKeyEvent
                     if (key.action == AndroidKeyEvent.ACTION_DOWN && key.keyCode in setOf(AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_NUMPAD_ENTER, AndroidKeyEvent.KEYCODE_SPACE)) {
                         onHome()
                         true
                     } else false
-                }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) { Text("← Back", fontSize = 11.sp) }
-            Column(Modifier.weight(1f)) {
-                Text("SERIES", color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.Black)
-                Text("Seasons and episodes • ${filtered.size} titles", color = TextMuted, fontSize = 11.sp)
-            }
-            SearchField(search, onSearch, Modifier.width(190.dp))
+                }, contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp)) { Text("← الرئيسية", fontSize = 10.sp) }
+            Spacer(Modifier.weight(1f))
+            SearchField(search, onSearch, Modifier.width(when { screenWidthDp >= 1200 -> 280.dp; screenWidthDp >= 700 -> 210.dp; else -> 135.dp }))
         }
-        if (message.isNotBlank()) Text(message, color = ErrorRed, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (message.isNotBlank()) Text(message, color = ErrorRed, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (shelves.size > 1) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 10.dp)) {
                 items(shelves, key = { "series-shelf:$it" }) { shelf ->
@@ -2823,84 +2834,71 @@ private fun SeriesScreen(
                 }
             }
         }
-        Spacer(Modifier.height(4.dp))
-        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Column(Modifier.weight(1.05f).fillMaxHeight()) {
-                when {
-                    filtered.isEmpty() -> EmptyState("No series available", message.ifBlank { "Series metadata is available from supported Xtream sources." })
-                    else -> LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 150.dp),
-                        state = gridState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 18.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        gridItems(filtered, key = { it.id }) { entry ->
-                            val selected = entry.id == selectedSeries?.id
-                            Column(Modifier.fillMaxWidth().clickable { onSelect(entry) }) {
-                                Surface(
-                                    color = Raised,
-                                    border = if (selected) BorderStroke(2.dp, Lime) else BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier.fillMaxWidth().aspectRatio(0.68f),
-                                ) {
-                                    if (entry.logoUrl.isNotBlank()) AsyncImage(model = entry.logoUrl, contentDescription = entry.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                                    else Box(contentAlignment = Alignment.Center) { Text(entry.title.take(1).uppercase(), color = Lime, fontSize = 32.sp, fontWeight = FontWeight.Black) }
-                                }
-                                if (preferences.watchProgressFraction(entry.id) > 0f) {
-                                    androidx.compose.material3.LinearProgressIndicator(
-                                        progress = { preferences.watchProgressFraction(entry.id) },
-                                        modifier = Modifier.fillMaxWidth().height(4.dp),
-                                        color = Color(0xFFE50914),
-                                        trackColor = Color.White.copy(alpha = 0.28f),
-                                    )
-                                }
-                                Text(entry.title, color = TextMain, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp))
-                                TextButton(onClick = { onFavorite(entry) }, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)) {
-                                    Text(if (entry.id in preferences.favorites()) "★ Saved" else "+ Favorite", color = Lime, fontSize = 9.sp)
-                                }
-                            }
+        Spacer(Modifier.height(2.dp))
+        when {
+            filtered.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                EmptyState("No series available", message.ifBlank { "Series metadata is available from supported Xtream sources." })
+            }
+            else -> LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = when { screenWidthDp >= 1500 -> 210.dp; screenWidthDp >= 1000 -> 180.dp; screenWidthDp >= 700 -> 150.dp; screenWidthDp <= 360 -> 108.dp; else -> 124.dp }),
+                state = gridState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 3.dp, bottom = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (isWideScreen) 14.dp else 8.dp),
+                verticalArrangement = Arrangement.spacedBy(if (isWideScreen) 14.dp else 8.dp),
+            ) {
+                gridItems(filtered, key = { it.id }) { entry ->
+                    val selected = entry.id == selectedSeries?.id
+                    Column(Modifier.fillMaxWidth().clickable { onSelect(entry); detailsOpen = true }) {
+                        Surface(
+                            color = Raised,
+                            border = if (selected) BorderStroke(2.dp, Lime) else BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().aspectRatio(0.68f),
+                        ) {
+                            if (entry.logoUrl.isNotBlank()) AsyncImage(model = entry.logoUrl, contentDescription = entry.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                            else Box(contentAlignment = Alignment.Center) { Text(entry.title.take(1).uppercase(), color = Lime, fontSize = 32.sp, fontWeight = FontWeight.Black) }
+                        }
+                        if (preferences.watchProgressFraction(entry.id) > 0f) {
+                            androidx.compose.material3.LinearProgressIndicator(
+                                progress = { preferences.watchProgressFraction(entry.id) },
+                                modifier = Modifier.fillMaxWidth().height(4.dp),
+                                color = Color(0xFFE50914),
+                                trackColor = Color.White.copy(alpha = 0.28f),
+                            )
+                        }
+                        Text(entry.title, color = TextMain, fontSize = if (isWideScreen) 13.sp else 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp))
+                        TextButton(onClick = { onFavorite(entry) }, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)) {
+                            Text(if (entry.id in preferences.favorites()) "★ Saved" else "+ Favorite", color = Lime, fontSize = 9.sp)
                         }
                     }
                 }
             }
-            Column(Modifier.weight(0.95f).fillMaxHeight().background(Panel, RoundedCornerShape(12.dp)).padding(12.dp)) {
-                Text(selectedSeries?.title ?: "SEASONS & EPISODES", color = Lime, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(8.dp))
-                selectedSeries?.let { series ->
-                    if (series.logoUrl.isNotBlank()) AsyncImage(series.logoUrl, contentDescription = series.title, modifier = Modifier.size(58.dp, 76.dp))
-                    val details = listOfNotNull(
-                        series.year.takeIf(String::isNotBlank),
-                        series.rating.takeIf(String::isNotBlank)?.let { "Rating $it" },
-                        series.genre.takeIf(String::isNotBlank),
-                    )
-                    if (details.isNotEmpty()) Text(details.joinToString(" | "), color = GoldLight, fontSize = 10.sp)
-                    if (series.description.isNotBlank()) Text(series.description, color = TextMuted, fontSize = 10.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(8.dp))
-                }
-                when {
-                    busy -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { LoadingState("Loading episodes") }
-                    selectedSeries == null -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { EmptyState("Select a series", "Choose a poster to load its seasons and episodes.") }
-                    episodes.isEmpty() -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { EmptyState("No episode data", "This provider did not return playable episodes.") }
-                    else -> LazyColumn(Modifier.weight(1f)) {
-                        episodes.groupBy { it.season }.forEach { (season, seasonEpisodes) ->
-                            item(key = "season:$season") {
-                                Text(season, color = TextMain, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
+        }
+        if (detailsOpen && selectedSeries != null) {
+            val series = selectedSeries
+            Dialog(onDismissRequest = { detailsOpen = false }) {
+                Surface(color = Panel, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().widthIn(max = 760.dp).heightIn(max = 760.dp)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (series.logoUrl.isNotBlank()) AsyncImage(series.logoUrl, contentDescription = series.title, modifier = Modifier.size(66.dp, 92.dp), contentScale = ContentScale.Crop)
+                            Column(Modifier.weight(1f)) {
+                                Text(series.title, color = TextMain, fontSize = if (isWideScreen) 22.sp else 18.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(listOf(series.year, series.genre, series.rating.takeIf { it.isNotBlank() }?.let { "★ $it" }.orEmpty()).filter { it.isNotBlank() }.joinToString(" · "), color = GoldLight, fontSize = 11.sp, maxLines = 2)
+                                if (series.description.isNotBlank()) Text(series.description, color = TextMuted, fontSize = 11.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
                             }
-                            items(seasonEpisodes, key = { it.id }) { episode ->
-                                Column(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    OutlinedButton(onClick = { onPlay(episode) }, modifier = Modifier.fillMaxWidth()) {
-                                        Text("${episode.episodeNumber.padStart(2, '0')}  ${episode.title}", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                    val episodeProgress = preferences.watchProgressFraction(episode.id)
-                                    if (episodeProgress > 0f) {
-                                        androidx.compose.material3.LinearProgressIndicator(
-                                            progress = { episodeProgress },
-                                            modifier = Modifier.fillMaxWidth().height(3.dp).padding(horizontal = 4.dp),
-                                            color = Color(0xFFE50914),
-                                            trackColor = Color.White.copy(alpha = 0.22f),
-                                        )
+                            TextButton(onClick = { detailsOpen = false }) { Text("إغلاق") }
+                        }
+                        when {
+                            busy -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) { LoadingState("Loading episodes") }
+                            episodes.isEmpty() -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) { EmptyState("No episode data", "This provider did not return playable episodes.") }
+                            else -> LazyColumn(Modifier.weight(1f, fill = false).heightIn(max = 500.dp)) {
+                                episodes.groupBy { it.season }.forEach { (season, seasonEpisodes) ->
+                                    item(key = "dialog-season:$season") { Text(season, color = TextMain, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp)) }
+                                    items(seasonEpisodes, key = { it.id }) { episode ->
+                                        OutlinedButton(onClick = { onPlay(episode); detailsOpen = false }, modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp)) {
+                                            Text("${episode.episodeNumber.padStart(2, '0')}  ${episode.title}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
                                     }
                                 }
                             }
@@ -2909,6 +2907,7 @@ private fun SeriesScreen(
                 }
             }
         }
+
     }
 }
 
