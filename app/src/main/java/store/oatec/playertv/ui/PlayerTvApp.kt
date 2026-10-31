@@ -2849,7 +2849,7 @@ private fun SeriesScreen(
             ) {
                 gridItems(filtered, key = { it.id }) { entry ->
                     val selected = entry.id == selectedSeries?.id
-                    Column(Modifier.fillMaxWidth().clickable { onSelect(entry) }) {
+                    Column(Modifier.fillMaxWidth().clickable { onSelect(entry); detailsOpen = true }) {
                         Surface(
                             color = Raised,
                             border = if (selected) BorderStroke(2.dp, Lime) else BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
